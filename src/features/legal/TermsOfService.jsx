@@ -8,8 +8,8 @@ export default function TermsOfService() {
       <p className="text-xs text-muted mb-2">Last updated: March 2026</p>
       <h1 className="text-3xl font-extrabold tracking-tight mb-4 text-text">Terms of Service</h1>
       <p className="text-sm text-muted leading-relaxed mb-8 pb-8 border-b border-border">
-        These Terms of Service ("Terms") govern your use of MyDeck, operated by
-        Kuibin Lin ("we", "us", "our"). By accessing or using MyDeck, you agree
+        These Terms of Service (&ldquo;Terms&rdquo;) govern your use of MyDeck, operated by
+        Kuibin Lin (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;). By accessing or using MyDeck, you agree
         to be bound by these Terms. If you do not agree, please do not use the service.
       </p>
 
@@ -48,7 +48,7 @@ export default function TermsOfService() {
         <p className="text-sm text-muted leading-relaxed mb-2">You agree not to:</p>
         <ul className="pl-5 mb-2">
           <li className="text-sm text-muted leading-relaxed mb-2">Use MyDeck for any unlawful purpose.</li>
-          <li className="text-sm text-muted leading-relaxed mb-2">Attempt to access, probe, or compromise other users' accounts or data.</li>
+          <li className="text-sm text-muted leading-relaxed mb-2">Attempt to access, probe, or compromise other users&rsquo; accounts or data.</li>
           <li className="text-sm text-muted leading-relaxed mb-2">Interfere with, disrupt, or degrade the performance of the service.</li>
           <li className="text-sm text-muted leading-relaxed mb-2">Use automated tools to scrape, crawl, or extract data without permission.</li>
           <li className="text-sm text-muted leading-relaxed mb-2">Attempt to reverse-engineer or compromise the security of the platform.</li>
@@ -86,7 +86,7 @@ export default function TermsOfService() {
       <section className="mb-8">
         <h2 className="text-base font-bold mb-2.5 text-text">7. Disclaimer of warranties</h2>
         <p className="text-sm text-muted leading-relaxed mb-2">
-          MyDeck is provided <strong>"as is"</strong> and <strong>"as available"</strong>,
+          MyDeck is provided <strong>&ldquo;as is&rdquo;</strong> and <strong>&ldquo;as available&rdquo;</strong>,
           without warranties of any kind, either express or implied, including but not
           limited to implied warranties of merchantability, fitness for a particular
           purpose, or non-infringement.
@@ -106,7 +106,7 @@ export default function TermsOfService() {
       <section className="mb-8">
         <h2 className="text-base font-bold mb-2.5 text-text">9. Changes to these Terms</h2>
         <p className="text-sm text-muted leading-relaxed mb-2">
-          We may update these Terms from time to time. The "Last updated" date at the
+          We may update these Terms from time to time. The &ldquo;Last updated&rdquo; date at the
           top of this page will reflect any changes. Your continued use of MyDeck after
           changes are posted constitutes your acceptance of the revised Terms.
         </p>

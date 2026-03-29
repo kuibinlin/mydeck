@@ -88,7 +88,7 @@ export default function LoginForm() {
 
       <a
         href={`${import.meta.env.VITE_API_URL}/auth/github`}
-        className="w-full inline-flex items-center justify-center gap-1.5 px-5 py-3 bg-[#24292e] hover:bg-[#1a1e22] text-white text-sm font-semibold rounded-btn transition-all cursor-pointer border-0"
+        className="w-full inline-flex items-center justify-center gap-1.5 px-5 py-3 bg-[#24292e] hover:bg-[#1a1e22] text-white text-sm font-semibold rounded-btn transition-all cursor-pointer border border-transparent dark:bg-[#2d333b] dark:border-[#444c56] dark:hover:bg-[#373e47]"
       >
         <i className="fab fa-github" />
         Continue with GitHub

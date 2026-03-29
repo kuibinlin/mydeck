@@ -14,7 +14,7 @@ export default function AuthPage() {
   if (user) return null
 
   return (
-    <div className="min-h-[calc(100vh-130px)] flex items-center justify-center p-10">
+    <div className="flex-1 flex items-center justify-center p-10 pb-24">
       <div className="w-full max-w-md bg-surface rounded-card shadow-card px-8 py-9">
         <div className="mb-6 text-center">
           <h2 className="text-[1.6rem] font-bold mb-1.5">

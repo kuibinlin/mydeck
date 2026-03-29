@@ -1,22 +1,27 @@
-import { useNavigate } from 'react-router'
-import { HERO } from '../landingContent'
+import { useNavigate } from "react-router";
+import { HERO } from "../landingContent";
+import HeroMockCard from "./HeroMockCard";
 
-// Hero section — first thing visitors see.
-// Visual slot is intentionally empty for now (text-only).
-// To add a graphic/screenshot later, drop it into the visual div.
 export default function HeroSection() {
-  const navigate = useNavigate()
+  const navigate = useNavigate();
   return (
-    <section className="flex items-center gap-16 max-w-6xl mx-auto px-10 py-20 pb-16 max-[900px]:flex-col max-[900px]:px-6 max-[900px]:py-12">
-      <div className="flex-1 max-w-2xl">
+    <section className="relative flex items-center gap-16 max-w-6xl mx-auto px-10 py-20 pb-16 max-[900px]:flex-col max-[900px]:px-6 max-[900px]:py-12 overflow-hidden">
+      {/* Background glow */}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,color-mix(in_srgb,var(--color-primary)_8%,transparent)_0%,transparent_65%)]" />
+
+      <div className="relative flex-1 max-w-2xl">
         {/* Eyebrow */}
         <span className="inline-flex items-center text-xs font-bold tracking-widest uppercase text-primary bg-primary/10 px-3 py-1.5 rounded-full mb-5">
           <i className="fas fa-layer-group" style={{ marginRight: 6 }} />
           MyDeck
         </span>
 
-        <h1 className="text-5xl max-md:text-3xl font-extrabold leading-tight tracking-tight mb-4 text-text">{HERO.headline}</h1>
-        <p className="text-lg text-muted leading-relaxed mb-8 max-w-xl">{HERO.subheadline}</p>
+        <h1 className="text-5xl max-md:text-3xl font-extrabold leading-tight tracking-tight mb-4 bg-gradient-to-r from-primary to-indigo-500 bg-clip-text text-transparent">
+          {HERO.headline}
+        </h1>
+        <p className="text-lg text-muted leading-relaxed mb-8 max-w-xl">
+          {HERO.subheadline}
+        </p>
 
         <div className="flex gap-3 flex-wrap">
           <button
@@ -35,12 +40,10 @@ export default function HeroSection() {
         </div>
       </div>
 
-      {/* Visual slot — replace the placeholder with a screenshot or graphic later */}
-      <div className="flex-none w-[420px] max-[900px]:hidden">
-        <div className="w-full aspect-[4/3] bg-surface rounded-card shadow-card border border-border flex items-center justify-center">
-          <i className="fas fa-layer-group" style={{ fontSize: '4rem', color: 'var(--color-primary)', opacity: 0.15 }} />
-        </div>
+      {/* Visual slot — swap <HeroMockCard /> with <img src="/hero.jpg" ... /> when ready */}
+      <div className="relative flex-none w-[420px] max-[900px]:w-full max-[900px]:max-w-[340px] max-[900px]:mx-auto shadow-[0_8px_40px_color-mix(in_srgb,var(--color-primary)_20%,transparent)] rounded-card">
+        <HeroMockCard />
       </div>
     </section>
-  )
+  );
 }

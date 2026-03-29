@@ -18,7 +18,8 @@ export default function ChallengePlay() {
 
   // quiz state
   const [index, setIndex] = useState(0)
-  const [answers, setAnswers] = useState([]) // bool[]
+  const [answers, setAnswers] = useState([])         // bool[]  — correct/wrong per question
+  const [selectedAnswers, setSelectedAnswers] = useState([]) // number[] — chosen index per question
   const [selectedIndex, setSelectedIndex] = useState(null)
   const [answered, setAnswered] = useState(false)
   const [done, setDone] = useState(false)
@@ -46,7 +47,9 @@ export default function ChallengePlay() {
     setTimeout(() => {
       const isCorrect = selected === correct
       const newAnswers = [...answers, isCorrect]
+      const newSelectedAnswers = [...selectedAnswers, selected]
       setAnswers(newAnswers)
+      setSelectedAnswers(newSelectedAnswers)
 
       if (index + 1 >= cards.length) {
         // quiz complete
@@ -75,7 +78,7 @@ export default function ChallengePlay() {
     : ''
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
+    <div>
       <button
         className="inline-flex items-center gap-1.5 text-primary text-sm font-semibold mb-4 cursor-pointer bg-transparent border-0 p-0 hover:opacity-80 transition-all"
         onClick={() => navigate('/challenges')}
@@ -98,6 +101,8 @@ export default function ChallengePlay() {
             total={answers.length}
             versionId={versionId}
             deckId={id}
+            cards={cards}
+            selectedAnswers={selectedAnswers}
           />
         </>
       ) : (

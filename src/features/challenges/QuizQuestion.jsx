@@ -7,8 +7,7 @@ import QuizChoice from './QuizChoice'
 export default function QuizQuestion({ question, choices, answer, onAnswer, answered, selectedIndex }) {
   const getState = (i) => {
     if (!answered) return null
-    if (i === answer) return 'correct'
-    if (i === selectedIndex) return 'wrong'
+    if (i === selectedIndex) return 'selected'
     return null
   }
 

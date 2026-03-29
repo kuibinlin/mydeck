@@ -16,10 +16,14 @@ export default function ProtectedRoute() {
   }
 
   return (
-    <>
+    <div className="min-h-screen flex flex-col">
       <Header />
-      <Outlet />
+      <main className="flex-1 flex flex-col">
+        <div className="w-full max-w-6xl mx-auto px-10 py-8 flex-1 flex flex-col max-md:px-6">
+          <Outlet />
+        </div>
+      </main>
       <Footer />
-    </>
+    </div>
   )
 }

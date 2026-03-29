@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router'
 import { useAuth } from '@/context/AuthContext'
 import Spinner from '@/components/ui/Spinner'
+import MedalBadge from '@/components/ui/MedalBadge'
 import HeroCard from './HeroCard'
 import { getLeaderboardSummary, getFlashcardDecks, getChallengeDecks } from './dashboardApi'
 
@@ -35,7 +36,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
+    <div>
       <p className="text-muted mb-4 text-sm">
         Welcome back, {user?.username}
       </p>
@@ -74,32 +75,30 @@ export default function Dashboard() {
             <i className="fas fa-trophy text-warning mr-1.5" />
             Leaderboards
           </h3>
-          <table className="w-full border-collapse text-sm">
+          <table className="w-full border-collapse text-base">
             <thead>
-              <tr className="border-b-2 border-border text-left">
-                <th className="px-3 py-2">Challenge</th>
-                <th className="px-3 py-2 text-center">1st</th>
-                <th className="px-3 py-2 text-center">2nd</th>
-                <th className="px-3 py-2 text-center">3rd</th>
+              <tr className="border-b-2 border-border text-left text-muted text-sm uppercase tracking-wider">
+                <th className="px-4 py-3 font-semibold">Challenge</th>
+                <th className="px-4 py-3 text-center font-semibold">1st</th>
+                <th className="px-4 py-3 text-center font-semibold">2nd</th>
+                <th className="px-4 py-3 text-center font-semibold">3rd</th>
               </tr>
             </thead>
             <tbody>
               {summary?.map(s => (
                 <tr
                   key={s.version_id}
-                  className="border-b border-border cursor-pointer hover:bg-primary/5"
+                  className="border-b border-border last:border-0 cursor-pointer hover:bg-primary/5 group"
                   onClick={() => navigate(`/leaderboard/${s.version_id}`)}
                 >
-                  <td className="px-3 py-2 font-semibold">{s.title}</td>
-                  <td className="px-3 py-2 text-center">
-                    {s.top3[0] ? `🥇 ${s.top3[0].username} ${s.top3[0].percentage}%` : '—'}
+                  <td className="px-4 py-3 font-semibold">
+                    <span className="inline-block border-b border-transparent group-hover:border-primary transition-colors pb-0.5">
+                      {s.title}
+                    </span>
                   </td>
-                  <td className="px-3 py-2 text-center">
-                    {s.top3[1] ? `🥈 ${s.top3[1].username} ${s.top3[1].percentage}%` : '—'}
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    {s.top3[2] ? `🥉 ${s.top3[2].username} ${s.top3[2].percentage}%` : '—'}
-                  </td>
+                  <td className="px-4 py-3 text-center"><MedalBadge entry={s.top3[0]} position={0} /></td>
+                  <td className="px-4 py-3 text-center"><MedalBadge entry={s.top3[1]} position={1} /></td>
+                  <td className="px-4 py-3 text-center"><MedalBadge entry={s.top3[2]} position={2} /></td>
                 </tr>
               ))}
             </tbody>

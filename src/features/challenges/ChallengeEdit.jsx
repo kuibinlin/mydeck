@@ -116,7 +116,7 @@ export default function ChallengeEdit() {
   if (loading) return <Spinner center />
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
+    <div>
       <button
         className="inline-flex items-center gap-1.5 text-primary text-sm font-semibold mb-4 cursor-pointer bg-transparent border-0 p-0 hover:opacity-80 transition-all"
         onClick={() => navigate('/challenges')}

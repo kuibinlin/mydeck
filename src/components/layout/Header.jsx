@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router'
 import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
 import { cn } from '@/lib/cn'
+import { fireConfetti } from '@/lib/confetti'
 
 const NAV_ITEMS = [
   { label: 'Home', path: '/dashboard', icon: 'fa-home' },
@@ -38,7 +39,7 @@ export default function Header() {
       className="sticky top-0 z-[100] border-b border-border"
       style={{ background: 'var(--color-bg)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
     >
-      <div className="flex items-center px-6 py-3 gap-2">
+      <div className="max-w-6xl mx-auto px-10 py-3 flex items-center gap-2 w-full max-md:px-6">
         {/* Logo */}
         <h1
           className="text-xl font-bold cursor-pointer bg-transparent border-0 text-text p-0 mr-2 shrink-0"
@@ -68,17 +69,20 @@ export default function Header() {
         {/* Right side */}
         <div className="flex items-center gap-2 ml-auto">
           <button onClick={toggleTheme} title="Toggle theme" className="bg-transparent border border-border text-muted w-8 h-8 rounded-input cursor-pointer flex items-center justify-center text-sm transition-all hover:text-text hover:border-muted">
-            <i className={isDark ? 'fas fa-sun' : 'fas fa-moon'} />
+            <i className="fas fa-circle-half-stroke" />
           </button>
           {user && (
-            <span className="text-sm text-muted max-md:hidden">
+            <span
+              className="text-sm text-text font-medium hover:text-primary transition-colors max-md:hidden cursor-pointer select-none"
+              onClick={fireConfetti}
+            >
               <i className="fas fa-user" style={{ marginRight: 4 }} />
               {user.username}
             </span>
           )}
           {user && (
             <button
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-all cursor-pointer border-0"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-error font-semibold rounded-btn transition-colors cursor-pointer border-0"
               onClick={handleLogout}
               title="Log out"
             >
