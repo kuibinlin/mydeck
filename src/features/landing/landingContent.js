@@ -2,8 +2,8 @@
 // To update text, edit this file only — no need to touch components.
 
 export const HERO = {
-  headline: 'Learn What Actually Matters to You.',
-  subheadline: 'Create your own flashcard decks, set your own challenges, compete on your terms.',
+  headline: 'My Deck. Create Once. Learn Together.',
+  subheadline: 'Build decks, share knowledge, and climb the leaderboard.',
   ctaPrimary: { label: 'Get Started Free', to: '/login' },
   ctaSecondary: { label: 'Sign In', to: '/login' },
 }
