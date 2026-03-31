@@ -4,6 +4,7 @@ import { useAuth } from '@/context/AuthContext'
 import Spinner from '@/components/ui/Spinner'
 import EmptyState from '@/components/ui/EmptyState'
 import Badge from '@/components/ui/Badge'
+import SearchInput from '@/components/ui/SearchInput'
 import { getDecks, getDeck } from './challengeApi'
 
 export default function ChallengeList() {
@@ -13,6 +14,8 @@ export default function ChallengeList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showMine, setShowMine] = useState(false)
+  const [search, setSearch] = useState('')
+  const [category, setCategory] = useState('')
 
   useEffect(() => {
     getDecks()
@@ -31,7 +34,17 @@ export default function ChallengeList() {
     }
   }
 
-  const visible = showMine ? decks.filter(d => d.created_by === user?.id) : decks
+  const categories = [...new Set(decks.map(d => d.category).filter(Boolean))].sort()
+
+  const visible = decks.filter(d => {
+    if (showMine && d.created_by !== user?.id) return false
+    if (category && d.category !== category) return false
+    if (search) {
+      const q = search.toLowerCase()
+      if (!d.title?.toLowerCase().includes(q) && !d.description?.toLowerCase().includes(q)) return false
+    }
+    return true
+  })
 
   return (
     <div>
@@ -60,6 +73,22 @@ export default function ChallengeList() {
         </button>
       </div>
 
+      <div className="flex gap-2 mb-4 flex-wrap">
+        <SearchInput
+          placeholder="Search challenges…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <select
+          value={category}
+          onChange={e => setCategory(e.target.value)}
+          className="px-3 py-1.5 text-sm rounded-btn border border-[var(--color-border)] bg-surface text-text focus:outline-none focus:border-primary cursor-pointer"
+        >
+          <option value="">All Categories</option>
+          {categories.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+
       {loading && <Spinner center />}
       {error && <div className="p-2.5 px-3.5 rounded-lg mb-4 text-sm bg-red-100 text-red-700 dark:bg-red-900/15 dark:text-[#ff6b6b]">{error}</div>}
 
@@ -67,7 +96,9 @@ export default function ChallengeList() {
         <EmptyState
           icon="fas fa-trophy"
           message={
-            showMine
+            search || category
+              ? 'No challenges match your search.'
+              : showMine
               ? "You haven't created any challenges yet.\nCreate one to get started!"
               : 'No challenges yet.\nCreate one to get started!'
           }

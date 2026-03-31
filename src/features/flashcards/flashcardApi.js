@@ -24,5 +24,14 @@ export const addCard = (deckId, data) =>
     body: JSON.stringify(data),
   })
 
+export const updateCard = (cardId, data) =>
+  api(`/api/flashcards/${cardId}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+
+export const deleteDeck = (id) =>
+  api(`/api/flashcard-decks/${id}`, { method: 'DELETE' })
+
 export const deleteCard = (cardId) =>
   api(`/api/flashcards/${cardId}`, { method: 'DELETE' })

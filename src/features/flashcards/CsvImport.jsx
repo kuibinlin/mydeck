@@ -6,6 +6,7 @@ import { parseCSV, downloadCSV } from '@/lib/utils'
 // onImport(cards): called with [{front, meaning, note}] after confirm
 export default function CsvImport({ onImport }) {
   const [preview, setPreview] = useState(null) // [{front, meaning, note, _keep}]
+  const [importing, setImporting] = useState(false)
   const inputRef = useRef()
 
   const downloadTemplate = () => {
@@ -59,10 +60,14 @@ export default function CsvImport({ onImport }) {
     setPreview(cards)
   }
 
-  const handleConfirm = () => {
-    const cards = preview.filter(c => c._keep)
-    onImport(cards)
-    setPreview(null)
+  const handleConfirm = async () => {
+    setImporting(true)
+    try {
+      await onImport(preview.filter(c => c._keep))
+    } finally {
+      setImporting(false)
+      setPreview(null)
+    }
   }
 
   const toggleRow = i => {
@@ -72,13 +77,13 @@ export default function CsvImport({ onImport }) {
   return (
     <>
       <button
-        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs bg-transparent text-primary border-[1.5px] border-primary hover:bg-primary hover:text-white font-semibold rounded-btn transition-all cursor-pointer border-0"
+        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs bg-transparent text-primary border border-primary hover:bg-primary hover:text-white font-semibold rounded-btn transition-all cursor-pointer"
         onClick={downloadTemplate}
       >
         <i className="fas fa-download" /> CSV Template
       </button>
       <button
-        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs bg-transparent text-primary border-[1.5px] border-primary hover:bg-primary hover:text-white font-semibold rounded-btn transition-all cursor-pointer border-0"
+        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs bg-transparent text-primary border border-primary hover:bg-primary hover:text-white font-semibold rounded-btn transition-all cursor-pointer"
         onClick={() => inputRef.current?.click()}
       >
         <i className="fas fa-file-import" /> Import CSV
@@ -92,59 +97,90 @@ export default function CsvImport({ onImport }) {
       />
 
       {preview && (
-        <div className="bg-surface rounded-card shadow-card p-5 mt-4">
-          <h3 className="mb-3">
-            Import Preview — {preview.filter(c => c._keep).length} cards
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b-2 border-border">
-                  <th className="px-2 py-1.5 text-left">Front</th>
-                  <th className="px-2 py-1.5 text-left">Meaning</th>
-                  <th className="px-2 py-1.5 text-left">Note</th>
-                  <th className="px-2 py-1.5" />
-                </tr>
-              </thead>
-              <tbody>
-                {preview.map((c, i) => (
-                  <tr
-                    key={i}
-                    className="border-b border-border"
-                    style={{ opacity: c._keep ? 1 : 0.4 }}
-                  >
-                    <td className="px-2 py-1.5">{c.front}</td>
-                    <td className="px-2 py-1.5">{c.meaning}</td>
-                    <td className="px-2 py-1.5 text-muted">{c.note}</td>
-                    <td className="px-2 py-1.5">
-                      <button
-                        className="inline-flex items-center gap-1.5 px-2 py-1 text-xs bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-all cursor-pointer border-0"
-                        onClick={() => toggleRow(i)}
-                      >
-                        <i
-                          className="fas fa-times"
-                          style={{ color: c._keep ? 'var(--color-error)' : 'var(--color-muted)' }}
-                        />
-                      </button>
-                    </td>
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[200] p-4"
+          onClick={() => setPreview(null)}
+        >
+          <div
+            className="bg-surface rounded-card shadow-[0_8px_32px_rgb(0_0_0/0.2)] w-full max-w-2xl max-h-[80vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border shrink-0">
+              <h3 className="font-bold text-base">
+                Import Preview — {preview.filter(c => c._keep).length} of {preview.length} cards
+              </h3>
+              <button
+                className="inline-flex items-center justify-center w-7 h-7 text-muted hover:text-text bg-transparent border-0 cursor-pointer rounded-btn transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => setPreview(null)}
+                disabled={importing}
+              >
+                <i className="fas fa-times" />
+              </button>
+            </div>
+
+            {/* Hint */}
+            <div className="px-5 py-2.5 bg-primary/5 border-b border-border shrink-0 flex items-center gap-2 text-xs text-muted">
+              <i className="fas fa-info-circle text-primary shrink-0" />
+              You can edit individual cards after importing if anything looks off.
+            </div>
+
+            <div className="overflow-auto flex-1 px-5 py-3">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b-2 border-border">
+                    <th className="px-2 py-1.5 text-left font-semibold">Front</th>
+                    <th className="px-2 py-1.5 text-left font-semibold">Meaning</th>
+                    <th className="px-2 py-1.5 text-left font-semibold">Note</th>
+                    <th className="px-2 py-1.5 w-8" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex gap-2 mt-3">
-            <button
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs bg-success hover:opacity-90 text-white font-semibold rounded-btn transition-all cursor-pointer border-0"
-              onClick={handleConfirm}
-            >
-              <i className="fas fa-check" /> Confirm Import
-            </button>
-            <button
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-all cursor-pointer border-0"
-              onClick={() => setPreview(null)}
-            >
-              <i className="fas fa-times" /> Cancel
-            </button>
+                </thead>
+                <tbody>
+                  {preview.map((c, i) => (
+                    <tr
+                      key={i}
+                      className="border-b border-border transition-opacity"
+                      style={{ opacity: c._keep ? 1 : 0.35 }}
+                    >
+                      <td className="px-2 py-2">{c.front}</td>
+                      <td className="px-2 py-2">{c.meaning}</td>
+                      <td className="px-2 py-2 text-muted">{c.note}</td>
+                      <td className="px-2 py-2 text-center">
+                        <button
+                          className="inline-flex items-center justify-center w-6 h-6 bg-transparent border-0 cursor-pointer rounded transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                          onClick={() => toggleRow(i)}
+                          title={c._keep ? 'Exclude row' : 'Include row'}
+                        >
+                          <i
+                            className={`fas ${c._keep ? 'fa-times text-error' : 'fa-undo text-muted'}`}
+                            style={{ fontSize: 11 }}
+                          />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex gap-2 px-5 py-4 border-t border-border shrink-0">
+              <button
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm bg-success hover:opacity-90 text-white font-semibold rounded-btn transition-all cursor-pointer border-0 disabled:opacity-60 disabled:cursor-not-allowed"
+                onClick={handleConfirm}
+                disabled={importing}
+              >
+                {importing
+                  ? <><i className="fas fa-spinner fa-spin" /> Importing…</>
+                  : <><i className="fas fa-check" /> Confirm Import</>
+                }
+              </button>
+              <button
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-colors cursor-pointer border-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => setPreview(null)}
+                disabled={importing}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

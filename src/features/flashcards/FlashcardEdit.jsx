@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import Spinner from '@/components/ui/Spinner'
+import Modal from '@/components/ui/Modal'
 import { CATEGORIES, DEFAULT_CATEGORY } from '@/lib/constants'
 import FlashcardCardForm from './FlashcardCardForm'
 import CsvImport from './CsvImport'
-import { getDeck, createDeck, updateDeck, addCard, deleteCard } from './flashcardApi'
+import { getDeck, createDeck, updateDeck, deleteDeck, addCard, updateCard, deleteCard } from './flashcardApi'
 
 export default function FlashcardEdit() {
   const { id } = useParams() // undefined when creating
@@ -17,10 +18,12 @@ export default function FlashcardEdit() {
   const [description, setDescription] = useState('')
   const [cards, setCards] = useState([])
   const [showCardForm, setShowCardForm] = useState(false)
+  const [editingCard, setEditingCard] = useState(null)
   const [msg, setMsg] = useState(null)
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [deckSaved, setDeckSaved] = useState(isEdit)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
 
   useEffect(() => {
     if (!isEdit) return
@@ -69,6 +72,16 @@ export default function FlashcardEdit() {
     }
   }
 
+  const handleUpdateCard = async (front, meaning, note) => {
+    try {
+      await updateCard(editingCard.id, { front, meaning, note })
+      setEditingCard(null)
+      refreshCards()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+
   const handleDeleteCard = async (cardId) => {
     if (!confirm('Delete this card?')) return
     try {
@@ -76,6 +89,16 @@ export default function FlashcardEdit() {
       refreshCards()
     } catch (err) {
       alert(err.message)
+    }
+  }
+
+  const handleDeleteDeck = async () => {
+    try {
+      await deleteDeck(deckId)
+      navigate('/flashcards')
+    } catch (err) {
+      setMsg({ type: 'error', text: err.message })
+      setShowDeleteModal(false)
     }
   }
 
@@ -149,16 +172,26 @@ export default function FlashcardEdit() {
             onChange={e => setDescription(e.target.value)}
           />
         </div>
-        <button
-          className="inline-flex items-center gap-1.5 px-5 py-2.5 text-sm bg-primary hover:bg-primary-hover text-white font-semibold rounded-btn transition-all cursor-pointer border-0 disabled:opacity-50 disabled:cursor-not-allowed"
-          onClick={handleSaveDeck}
-          disabled={saving}
-        >
-          {isEdit
-            ? <><i className="fas fa-save" /> Update</>
-            : <><i className="fas fa-check" /> Confirm</>
-          }
-        </button>
+        <div className="flex items-center justify-between gap-3">
+          <button
+            className="inline-flex items-center gap-1.5 px-5 py-2.5 text-sm bg-primary hover:bg-primary-hover text-white font-semibold rounded-btn transition-all cursor-pointer border-0 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleSaveDeck}
+            disabled={saving}
+          >
+            {isEdit
+              ? <><i className="fas fa-save" /> Update</>
+              : <><i className="fas fa-check" /> Confirm</>
+            }
+          </button>
+          {isEdit && (
+            <button
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-sm bg-transparent text-error hover:bg-error hover:text-white font-semibold rounded-btn transition-all cursor-pointer border border-error"
+              onClick={() => setShowDeleteModal(true)}
+            >
+              <i className="fas fa-trash" /> Delete Deck
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Card editor — shown only after deck is created */}
@@ -170,7 +203,7 @@ export default function FlashcardEdit() {
               <CsvImport onImport={handleCsvImport} />
               <button
                 className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs bg-primary hover:bg-primary-hover text-white font-semibold rounded-btn transition-all cursor-pointer border-0"
-                onClick={() => setShowCardForm(true)}
+                onClick={() => { setEditingCard(null); setShowCardForm(true) }}
               >
                 <i className="fas fa-plus" /> Add Card
               </button>
@@ -192,29 +225,66 @@ export default function FlashcardEdit() {
           )}
 
           {cards.map((c, i) => (
-            <div
-              key={c.id}
-              className="bg-surface rounded-card shadow-card p-4 mb-3"
-            >
-              <div className="flex justify-between items-center mb-1.5">
-                <span className="font-bold text-sm text-muted">
-                  Card {i + 1}
-                </span>
-                <button
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-all cursor-pointer border-0"
-                  onClick={() => handleDeleteCard(c.id)}
-                >
-                  <i className="fas fa-trash text-error" />
-                </button>
+            editingCard?.id === c.id ? (
+              <FlashcardCardForm
+                key={c.id}
+                initialValues={c}
+                onSave={handleUpdateCard}
+                onCancel={() => setEditingCard(null)}
+              />
+            ) : (
+              <div
+                key={c.id}
+                className="bg-surface rounded-card shadow-card p-4 mb-3"
+              >
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="font-bold text-sm text-muted">
+                    Card {i + 1}
+                  </span>
+                  <div className="flex gap-1">
+                    <button
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-all cursor-pointer border-0"
+                      onClick={() => { setShowCardForm(false); setEditingCard(c) }}
+                    >
+                      <i className="fas fa-pencil-alt" />
+                    </button>
+                    <button
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-all cursor-pointer border-0"
+                      onClick={() => handleDeleteCard(c.id)}
+                    >
+                      <i className="fas fa-trash text-error" />
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
+                  <div>
+                    <div className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Front</div>
+                    <div className="text-sm font-semibold">{c.front}</div>
+                  </div>
+                  <div className="border-l border-border pl-3 max-sm:border-l-0 max-sm:pl-0 max-sm:border-t max-sm:pt-3">
+                    <div className="text-[10px] font-semibold text-muted uppercase tracking-wider mb-1">Back</div>
+                    <div className="text-sm">{c.meaning}</div>
+                    {c.note && (
+                      <div className="text-xs text-muted mt-2 pt-2 border-t border-border">
+                        {c.note}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-              <strong>{c.front}</strong> → {c.meaning}
-              {c.note && (
-                <div className="text-muted text-xs mt-1">{c.note}</div>
-              )}
-            </div>
+            )
           ))}
         </>
       )}
+      <Modal
+        open={showDeleteModal}
+        title="Delete deck?"
+        message="This will permanently delete the deck and all its cards. This cannot be undone."
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={handleDeleteDeck}
+        onCancel={() => setShowDeleteModal(false)}
+      />
     </div>
   )
 }

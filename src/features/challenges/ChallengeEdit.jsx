@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import Spinner from '@/components/ui/Spinner'
+import Modal from '@/components/ui/Modal'
 import { CATEGORIES, DEFAULT_CATEGORY } from '@/lib/constants'
 import { getDecks as getFcDecks } from '@/features/flashcards/flashcardApi'
 import QuestionForm from './QuestionForm'
 import CsvImport from './CsvImport'
-import { getDeck, createDeck, updateDeck, addCard, deleteCard, publish } from './challengeApi'
+import { getDeck, createDeck, updateDeck, deleteDeck, addCard, updateCard, deleteCard, publish } from './challengeApi'
 
 export default function ChallengeEdit() {
   const { id } = useParams()
@@ -20,10 +21,13 @@ export default function ChallengeEdit() {
   const [fcDecks, setFcDecks] = useState([])
   const [cards, setCards] = useState([])
   const [showQuestionForm, setShowQuestionForm] = useState(false)
+  const [editingCard, setEditingCard] = useState(null)
   const [msg, setMsg] = useState(null)
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [deckSaved, setDeckSaved] = useState(isEdit)
+  const [isPublished, setIsPublished] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
 
   useEffect(() => {
     // load flashcard decks for the link dropdown
@@ -39,6 +43,7 @@ export default function ChallengeEdit() {
           setLinkedFcId(String(data.linked_flashcard_decks[0].id))
         }
         setCards(data.all_cards || [])
+        setIsPublished(!!data.version)
       })
       .catch(err => { alert(err.message); navigate('/challenges') })
       .finally(() => setLoading(false))
@@ -83,6 +88,16 @@ export default function ChallengeEdit() {
     }
   }
 
+  const handleUpdateQuestion = async ({ question, choices, answer }) => {
+    try {
+      await updateCard(editingCard.id, { question, choices, answer })
+      setEditingCard(null)
+      refreshCards()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+
   const handleDeleteQuestion = async (cardId) => {
     if (!confirm('Delete this question?')) return
     try {
@@ -90,6 +105,16 @@ export default function ChallengeEdit() {
       refreshCards()
     } catch (err) {
       alert(err.message)
+    }
+  }
+
+  const handleDeleteDeck = async () => {
+    try {
+      await deleteDeck(deckId)
+      navigate('/challenges')
+    } catch (err) {
+      setMsg({ type: 'error', text: err.message })
+      setShowDeleteModal(false)
     }
   }
 
@@ -185,16 +210,26 @@ export default function ChallengeEdit() {
           </div>
         )}
 
-        <button
-          className="inline-flex items-center gap-1.5 px-5 py-2.5 text-sm bg-primary hover:bg-primary-hover text-white font-semibold rounded-btn transition-all cursor-pointer border-0 disabled:opacity-50 disabled:cursor-not-allowed"
-          onClick={handleSaveDeck}
-          disabled={saving}
-        >
-          {isEdit
-            ? <><i className="fas fa-save" /> Update</>
-            : <><i className="fas fa-check" /> Confirm</>
-          }
-        </button>
+        <div className="flex items-center justify-between gap-3">
+          <button
+            className="inline-flex items-center gap-1.5 px-5 py-2.5 text-sm bg-primary hover:bg-primary-hover text-white font-semibold rounded-btn transition-all cursor-pointer border-0 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleSaveDeck}
+            disabled={saving}
+          >
+            {isEdit
+              ? <><i className="fas fa-save" /> Update</>
+              : <><i className="fas fa-check" /> Confirm</>
+            }
+          </button>
+          {isEdit && (
+            <button
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 text-sm bg-transparent text-error hover:bg-error hover:text-white font-semibold rounded-btn transition-all cursor-pointer border border-error"
+              onClick={() => setShowDeleteModal(true)}
+            >
+              <i className="fas fa-trash" /> Delete Deck
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Question editor */}
@@ -206,7 +241,7 @@ export default function ChallengeEdit() {
               <CsvImport onImport={handleCsvImport} />
               <button
                 className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs bg-primary hover:bg-primary-hover text-white font-semibold rounded-btn transition-all cursor-pointer border-0"
-                onClick={() => setShowQuestionForm(true)}
+                onClick={() => { setEditingCard(null); setShowQuestionForm(true) }}
               >
                 <i className="fas fa-plus" /> Add Question
               </button>
@@ -229,7 +264,14 @@ export default function ChallengeEdit() {
 
           {cards.map((c, i) => {
             const choices = JSON.parse(c.choices)
-            return (
+            return editingCard?.id === c.id ? (
+              <QuestionForm
+                key={c.id}
+                initialValues={{ question: c.question, choices, answer: c.answer }}
+                onSave={handleUpdateQuestion}
+                onCancel={() => setEditingCard(null)}
+              />
+            ) : (
               <div
                 key={c.id}
                 className="bg-surface rounded-card shadow-card p-4 mb-3"
@@ -238,12 +280,20 @@ export default function ChallengeEdit() {
                   <span className="font-bold text-sm text-muted">
                     Q{i + 1}
                   </span>
-                  <button
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-all cursor-pointer border-0"
-                    onClick={() => handleDeleteQuestion(c.id)}
-                  >
-                    <i className="fas fa-trash text-error" />
-                  </button>
+                  <div className="flex gap-1">
+                    <button
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-all cursor-pointer border-0"
+                      onClick={() => { setShowQuestionForm(false); setEditingCard(c) }}
+                    >
+                      <i className="fas fa-pencil-alt" />
+                    </button>
+                    <button
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-all cursor-pointer border-0"
+                      onClick={() => handleDeleteQuestion(c.id)}
+                    >
+                      <i className="fas fa-trash text-error" />
+                    </button>
+                  </div>
                 </div>
                 <strong>{c.question}</strong>
                 <div className="mt-1.5 text-sm">
@@ -272,6 +322,19 @@ export default function ChallengeEdit() {
           )}
         </>
       )}
+      <Modal
+        open={showDeleteModal}
+        title="Delete deck?"
+        message={
+          isPublished
+            ? 'This deck has been published. Deleting it will permanently remove all questions, published versions, and leaderboard scores. This cannot be undone.'
+            : 'This will permanently delete the draft deck and all its questions. This cannot be undone.'
+        }
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={handleDeleteDeck}
+        onCancel={() => setShowDeleteModal(false)}
+      />
     </div>
   )
 }

@@ -1,12 +1,14 @@
 import { useState } from 'react'
 
-// Inline form for adding a new card
 // onSave(front, meaning, note): called on save
 // onCancel: called on cancel
-export default function FlashcardCardForm({ onSave, onCancel }) {
-  const [front, setFront] = useState('')
-  const [meaning, setMeaning] = useState('')
-  const [note, setNote] = useState('')
+// initialValues: if provided, form starts pre-filled (edit mode)
+export default function FlashcardCardForm({ onSave, onCancel, initialValues }) {
+  const [front, setFront] = useState(initialValues?.front ?? '')
+  const [meaning, setMeaning] = useState(initialValues?.meaning ?? '')
+  const [note, setNote] = useState(initialValues?.note ?? '')
+
+  const isEditing = initialValues != null
 
   const handleSave = () => {
     if (!front.trim() || !meaning.trim()) {
@@ -58,7 +60,7 @@ export default function FlashcardCardForm({ onSave, onCancel }) {
           className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs bg-success hover:opacity-90 text-white font-semibold rounded-btn transition-all cursor-pointer border-0"
           onClick={handleSave}
         >
-          <i className="fas fa-check" /> Save
+          <i className="fas fa-check" /> {isEditing ? 'Update' : 'Save'}
         </button>
         <button
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-all cursor-pointer border-0"

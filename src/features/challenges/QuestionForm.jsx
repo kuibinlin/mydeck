@@ -2,10 +2,13 @@ import { useState } from 'react'
 
 // onSave({ question, choices, answer }): called on save
 // onCancel
-export default function QuestionForm({ onSave, onCancel }) {
-  const [question, setQuestion] = useState('')
-  const [choices, setChoices] = useState(['', '', '', ''])
-  const [answer, setAnswer] = useState(0)
+// initialValues: if provided, form starts pre-filled (edit mode)
+export default function QuestionForm({ onSave, onCancel, initialValues }) {
+  const [question, setQuestion] = useState(initialValues?.question ?? '')
+  const [choices, setChoices] = useState(initialValues?.choices ?? ['', '', '', ''])
+  const [answer, setAnswer] = useState(initialValues?.answer ?? 0)
+
+  const isEditing = initialValues != null
 
   const setChoice = (i, val) =>
     setChoices(prev => prev.map((c, idx) => (idx === i ? val : c)))
@@ -63,7 +66,7 @@ export default function QuestionForm({ onSave, onCancel }) {
           className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs bg-success hover:opacity-90 text-white font-semibold rounded-btn transition-all cursor-pointer border-0"
           onClick={handleSave}
         >
-          <i className="fas fa-check" /> Save
+          <i className="fas fa-check" /> {isEditing ? 'Update' : 'Save'}
         </button>
         <button
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-all cursor-pointer border-0"
