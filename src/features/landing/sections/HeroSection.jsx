@@ -17,9 +17,10 @@ export default function HeroSection() {
         </span>
 
         <h1 className="text-5xl max-md:text-3xl font-extrabold leading-tight tracking-tight mb-4 bg-gradient-to-r from-primary to-indigo-500 bg-clip-text text-transparent">
-          {HERO.headline}
+          <span className="block">{HERO.headlineLine1}</span>
+          <span className="block">{HERO.headlineLine2}</span>
         </h1>
-        <p className="text-lg text-muted leading-relaxed mb-8 max-w-xl">
+        <p className="text-3xl max-md:text-base font-semibold leading-relaxed mb-8 max-w-xl bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
           {HERO.subheadline}
         </p>
 

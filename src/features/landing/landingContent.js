@@ -2,8 +2,9 @@
 // To update text, edit this file only — no need to touch components.
 
 export const HERO = {
-  headline: 'My Deck. Create Once. Learn Together.',
-  subheadline: 'Build decks, share knowledge, and climb the leaderboard.',
+  headlineLine1: 'Built by Learners,',
+  headlineLine2: 'for Learners.',
+  subheadline: 'Every deck you create helps someone else learn.',
   ctaPrimary: { label: 'Get Started Free', to: '/login' },
   ctaSecondary: { label: 'Sign In', to: '/login' },
 }
