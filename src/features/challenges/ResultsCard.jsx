@@ -24,7 +24,7 @@ function ChoiceRow({ text, isCorrect, isUserWrong }) {
 
 // Renders one question with all choices revealed
 function QuestionReview({ card, userPick, questionNumber }) {
-  const choices = JSON.parse(card.choices)
+  const choices = card.choices
   const correct = card.answer
   const isCorrect = userPick === correct
 

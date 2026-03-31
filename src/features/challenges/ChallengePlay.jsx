@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import Spinner from '@/components/ui/Spinner'
 import ProgressBar from '@/components/ui/ProgressBar'
+import BackButton from '@/components/ui/BackButton'
 import QuizQuestion from './QuizQuestion'
 import ResultsCard from './ResultsCard'
 import { getDeck, submitScore } from './challengeApi'
@@ -79,12 +80,7 @@ export default function ChallengePlay() {
 
   return (
     <div>
-      <button
-        className="inline-flex items-center gap-1.5 text-primary text-sm font-semibold mb-4 cursor-pointer bg-transparent border-0 p-0 hover:opacity-80 transition-all"
-        onClick={() => navigate('/challenges')}
-      >
-        <i className="fas fa-arrow-left" /> Back
-      </button>
+      <BackButton onClick={() => navigate('/challenges')} />
 
       <h2 className="text-xl font-bold mb-4">{deck?.title}</h2>
 
@@ -128,7 +124,7 @@ export default function ChallengePlay() {
           {cards[index] && (
             <QuizQuestion
               question={cards[index].question}
-              choices={JSON.parse(cards[index].choices)}
+              choices={cards[index].choices}
               answer={cards[index].answer}
               onAnswer={handleAnswer}
               answered={answered}

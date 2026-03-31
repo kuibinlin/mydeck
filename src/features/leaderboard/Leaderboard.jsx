@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import Spinner from '@/components/ui/Spinner'
 import EmptyState from '@/components/ui/EmptyState'
+import BackButton from '@/components/ui/BackButton'
 import LeaderboardRow from './LeaderboardRow'
 import { getLeaderboard } from './leaderboardApi'
 
@@ -26,12 +27,7 @@ export default function Leaderboard() {
 
   return (
     <div>
-      <button
-        className="inline-flex items-center gap-1.5 text-primary text-sm font-semibold mb-4 cursor-pointer bg-transparent border-0 p-0 hover:opacity-80 transition-all"
-        onClick={() => navigate('/dashboard')}
-      >
-        <i className="fas fa-arrow-left" /> Back
-      </button>
+      <BackButton onClick={() => navigate('/dashboard')} />
 
       {loading && <Spinner center />}
       {error && <div className="p-2.5 px-3.5 rounded-lg mb-4 text-sm bg-red-100 text-red-700 dark:bg-red-900/15 dark:text-[#ff6b6b]">{error}</div>}

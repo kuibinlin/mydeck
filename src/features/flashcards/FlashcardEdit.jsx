@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import Spinner from '@/components/ui/Spinner'
 import Modal from '@/components/ui/Modal'
+import BackButton from '@/components/ui/BackButton'
 import { CATEGORIES, DEFAULT_CATEGORY } from '@/lib/constants'
 import FlashcardCardForm from './FlashcardCardForm'
 import CsvImport from './CsvImport'
@@ -24,6 +25,7 @@ export default function FlashcardEdit() {
   const [saving, setSaving] = useState(false)
   const [deckSaved, setDeckSaved] = useState(isEdit)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [pendingDeleteCardId, setPendingDeleteCardId] = useState(null)
 
   useEffect(() => {
     if (!isEdit) return
@@ -68,7 +70,7 @@ export default function FlashcardEdit() {
       setShowCardForm(false)
       refreshCards()
     } catch (err) {
-      alert(err.message)
+      setMsg({ type: 'error', text: err.message })
     }
   }
 
@@ -78,17 +80,18 @@ export default function FlashcardEdit() {
       setEditingCard(null)
       refreshCards()
     } catch (err) {
-      alert(err.message)
+      setMsg({ type: 'error', text: err.message })
     }
   }
 
-  const handleDeleteCard = async (cardId) => {
-    if (!confirm('Delete this card?')) return
+  const handleDeleteCard = async () => {
     try {
-      await deleteCard(cardId)
+      await deleteCard(pendingDeleteCardId)
+      setPendingDeleteCardId(null)
       refreshCards()
     } catch (err) {
-      alert(err.message)
+      setMsg({ type: 'error', text: err.message })
+      setPendingDeleteCardId(null)
     }
   }
 
@@ -115,12 +118,7 @@ export default function FlashcardEdit() {
 
   return (
     <div>
-      <button
-        className="inline-flex items-center gap-1.5 text-primary text-sm font-semibold mb-4 cursor-pointer bg-transparent border-0 p-0 hover:opacity-80 transition-all"
-        onClick={() => navigate('/flashcards')}
-      >
-        <i className="fas fa-arrow-left" /> Back
-      </button>
+      <BackButton onClick={() => navigate('/flashcards')} />
 
       <h2 className="text-xl font-bold mb-4">
         {isEdit ? 'Edit Flashcards' : 'Create Flashcards'}
@@ -250,7 +248,7 @@ export default function FlashcardEdit() {
                     </button>
                     <button
                       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-all cursor-pointer border-0"
-                      onClick={() => handleDeleteCard(c.id)}
+                      onClick={() => setPendingDeleteCardId(c.id)}
                     >
                       <i className="fas fa-trash text-error" />
                     </button>
@@ -276,6 +274,15 @@ export default function FlashcardEdit() {
           ))}
         </>
       )}
+      <Modal
+        open={!!pendingDeleteCardId}
+        title="Delete card?"
+        message="This card will be permanently deleted."
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={handleDeleteCard}
+        onCancel={() => setPendingDeleteCardId(null)}
+      />
       <Modal
         open={showDeleteModal}
         title="Delete deck?"

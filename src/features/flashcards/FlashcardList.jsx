@@ -5,6 +5,7 @@ import Spinner from '@/components/ui/Spinner'
 import EmptyState from '@/components/ui/EmptyState'
 import Badge from '@/components/ui/Badge'
 import SearchInput from '@/components/ui/SearchInput'
+import BackButton from '@/components/ui/BackButton'
 import { getDecks } from './flashcardApi'
 
 export default function FlashcardList() {
@@ -38,12 +39,7 @@ export default function FlashcardList() {
 
   return (
     <div>
-      <button
-        className="inline-flex items-center gap-1.5 text-primary text-sm font-semibold mb-4 cursor-pointer bg-transparent border-0 p-0 hover:opacity-80 transition-all"
-        onClick={() => navigate('/dashboard')}
-      >
-        <i className="fas fa-arrow-left" /> Back
-      </button>
+      <BackButton onClick={() => navigate('/dashboard')} />
 
       <div className="flex items-center gap-3 mb-6 flex-wrap">
         <h2 className="text-xl font-bold">Flashcard Decks</h2>

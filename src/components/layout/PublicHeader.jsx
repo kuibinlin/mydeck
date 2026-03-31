@@ -36,7 +36,7 @@ export default function PublicHeader() {
 
         {/* Right side */}
         <div className="flex items-center gap-2 ml-auto">
-          <button onClick={toggleTheme} title="Toggle theme" className="bg-transparent border border-border text-muted w-8 h-8 rounded-input cursor-pointer flex items-center justify-center text-sm transition-all hover:text-text hover:border-muted">
+          <button onClick={toggleTheme} title="Toggle theme" className="inline-flex items-center justify-center px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-colors cursor-pointer border-0">
             <i className="fas fa-circle-half-stroke" />
           </button>
           <button

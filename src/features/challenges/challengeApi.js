@@ -3,8 +3,16 @@ import { api } from '@/lib/apiClient'
 export const getDecks = () =>
   api('/api/challenge-decks')
 
-export const getDeck = (id) =>
-  api(`/api/challenge-decks/${id}`)
+const parseChoices = cards => cards.map(c => ({ ...c, choices: JSON.parse(c.choices) }))
+
+export const getDeck = async (id) => {
+  const data = await api(`/api/challenge-decks/${id}`)
+  return {
+    ...data,
+    cards: data.cards ? parseChoices(data.cards) : [],
+    all_cards: data.all_cards ? parseChoices(data.all_cards) : [],
+  }
+}
 
 export const createDeck = (data) =>
   api('/api/challenge-decks', {

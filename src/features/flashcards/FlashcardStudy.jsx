@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import Spinner from '@/components/ui/Spinner'
 import ProgressBar from '@/components/ui/ProgressBar'
+import BackButton from '@/components/ui/BackButton'
 import FlashcardCard from './FlashcardCard'
 import { getDeck } from './flashcardApi'
 
@@ -72,12 +73,7 @@ export default function FlashcardStudy() {
 
   return (
     <div>
-      <button
-        className="inline-flex items-center gap-1.5 text-primary text-sm font-semibold mb-4 cursor-pointer bg-transparent border-0 p-0 hover:opacity-80 transition-all"
-        onClick={() => navigate('/flashcards')}
-      >
-        <i className="fas fa-arrow-left" /> Back
-      </button>
+      <BackButton onClick={() => navigate('/flashcards')} />
 
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-xl font-bold">{deck?.title}</h2>

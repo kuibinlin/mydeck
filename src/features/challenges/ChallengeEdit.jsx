@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import Spinner from '@/components/ui/Spinner'
 import Modal from '@/components/ui/Modal'
+import BackButton from '@/components/ui/BackButton'
 import { CATEGORIES, DEFAULT_CATEGORY } from '@/lib/constants'
 import { getDecks as getFcDecks } from '@/features/flashcards/flashcardApi'
 import QuestionForm from './QuestionForm'
@@ -28,6 +29,8 @@ export default function ChallengeEdit() {
   const [deckSaved, setDeckSaved] = useState(isEdit)
   const [isPublished, setIsPublished] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [pendingDeleteCardId, setPendingDeleteCardId] = useState(null)
+  const [showPublishModal, setShowPublishModal] = useState(false)
 
   useEffect(() => {
     // load flashcard decks for the link dropdown
@@ -84,7 +87,7 @@ export default function ChallengeEdit() {
       setShowQuestionForm(false)
       refreshCards()
     } catch (err) {
-      alert(err.message)
+      setMsg({ type: 'error', text: err.message })
     }
   }
 
@@ -94,17 +97,18 @@ export default function ChallengeEdit() {
       setEditingCard(null)
       refreshCards()
     } catch (err) {
-      alert(err.message)
+      setMsg({ type: 'error', text: err.message })
     }
   }
 
-  const handleDeleteQuestion = async (cardId) => {
-    if (!confirm('Delete this question?')) return
+  const handleDeleteQuestion = async () => {
     try {
-      await deleteCard(cardId)
+      await deleteCard(pendingDeleteCardId)
+      setPendingDeleteCardId(null)
       refreshCards()
     } catch (err) {
-      alert(err.message)
+      setMsg({ type: 'error', text: err.message })
+      setPendingDeleteCardId(null)
     }
   }
 
@@ -128,13 +132,11 @@ export default function ChallengeEdit() {
   }
 
   const handlePublish = async () => {
-    if (!confirm('Publish a new version? This creates a new leaderboard.')) return
     try {
-      const data = await publish(deckId)
-      alert(`Published version ${data.version} with ${data.card_count} questions!`)
+      await publish(deckId)
       navigate('/challenges')
     } catch (err) {
-      alert(err.message)
+      setMsg({ type: 'error', text: err.message })
     }
   }
 
@@ -142,12 +144,7 @@ export default function ChallengeEdit() {
 
   return (
     <div>
-      <button
-        className="inline-flex items-center gap-1.5 text-primary text-sm font-semibold mb-4 cursor-pointer bg-transparent border-0 p-0 hover:opacity-80 transition-all"
-        onClick={() => navigate('/challenges')}
-      >
-        <i className="fas fa-arrow-left" /> Back
-      </button>
+      <BackButton onClick={() => navigate('/challenges')} />
 
       <h2 className="text-xl font-bold mb-4">
         {isEdit ? 'Edit Challenge' : 'Create Challenge'}
@@ -263,7 +260,7 @@ export default function ChallengeEdit() {
           )}
 
           {cards.map((c, i) => {
-            const choices = JSON.parse(c.choices)
+            const choices = c.choices
             return editingCard?.id === c.id ? (
               <QuestionForm
                 key={c.id}
@@ -289,7 +286,7 @@ export default function ChallengeEdit() {
                     </button>
                     <button
                       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-all cursor-pointer border-0"
-                      onClick={() => handleDeleteQuestion(c.id)}
+                      onClick={() => setPendingDeleteCardId(c.id)}
                     >
                       <i className="fas fa-trash text-error" />
                     </button>
@@ -315,13 +312,31 @@ export default function ChallengeEdit() {
           {cards.length > 0 && (
             <button
               className="w-full inline-flex items-center justify-center gap-1.5 px-5 py-2.5 text-sm bg-success hover:opacity-90 text-white font-semibold rounded-btn transition-all cursor-pointer border-0 mt-4"
-              onClick={handlePublish}
+              onClick={() => setShowPublishModal(true)}
             >
               <i className="fas fa-rocket" /> Publish Version
             </button>
           )}
         </>
       )}
+      <Modal
+        open={!!pendingDeleteCardId}
+        title="Delete question?"
+        message="This question will be permanently deleted."
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={handleDeleteQuestion}
+        onCancel={() => setPendingDeleteCardId(null)}
+      />
+      <Modal
+        open={showPublishModal}
+        title="Publish new version?"
+        message="This creates a new leaderboard. Previous scores will remain on their version."
+        confirmLabel="Publish"
+        confirmVariant="primary"
+        onConfirm={() => { setShowPublishModal(false); handlePublish() }}
+        onCancel={() => setShowPublishModal(false)}
+      />
       <Modal
         open={showDeleteModal}
         title="Delete deck?"
