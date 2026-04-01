@@ -4,7 +4,7 @@ import QuizChoice from './QuizChoice'
 // onAnswer(selectedIndex): called when a choice is picked
 // answered: bool — locks choices after selection
 // selectedIndex: which was chosen
-export default function QuizQuestion({ question, choices, answer, onAnswer, answered, selectedIndex }) {
+export default function QuizQuestion({ question, choices, onAnswer, answered, selectedIndex }) {
   const getState = (i) => {
     if (!answered) return null
     if (i === selectedIndex) return 'selected'

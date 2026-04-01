@@ -1,31 +1,34 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
-import { AuthProvider } from '@/context/AuthContext'
-import { ThemeProvider } from '@/context/ThemeContext'
-import PublicLayout from '@/components/layout/PublicLayout'
-import ProtectedRoute from '@/components/layout/ProtectedRoute'
+import { BrowserRouter, Routes, Route, Navigate } from "react-router";
+import { AuthProvider } from "@/context/AuthContext";
+import { ThemeProvider } from "@/context/ThemeContext";
+import PublicLayout from "@/components/layout/PublicLayout";
+import ProtectedRoute from "@/components/layout/ProtectedRoute";
 
 // Public
-import LandingPage from '@/features/landing/LandingPage'
-import AuthPage from '@/features/auth/AuthPage'
-import PrivacyPolicy from '@/features/legal/PrivacyPolicy'
-import TermsOfService from '@/features/legal/TermsOfService'
+import LandingPage from "@/features/landing/LandingPage";
+import AuthPage from "@/features/auth/AuthPage";
+import PrivacyPolicy from "@/features/legal/PrivacyPolicy";
+import TermsOfService from "@/features/legal/TermsOfService";
 
 // Dashboard
-import Dashboard from '@/features/dashboard/Dashboard'
+import Dashboard from "@/features/dashboard/Dashboard";
 
 // Flashcards
-import FlashcardList from '@/features/flashcards/FlashcardList'
-import FlashcardStudy from '@/features/flashcards/FlashcardStudy'
-import FlashcardEdit from '@/features/flashcards/FlashcardEdit'
+import FlashcardList from "@/features/flashcards/FlashcardList";
+import FlashcardStudy from "@/features/flashcards/FlashcardStudy";
+import FlashcardEdit from "@/features/flashcards/FlashcardEdit";
 
 // Challenges
-import ChallengeList from '@/features/challenges/ChallengeList'
-import ChallengePlay from '@/features/challenges/ChallengePlay'
-import ChallengeEdit from '@/features/challenges/ChallengeEdit'
+import ChallengeList from "@/features/challenges/ChallengeList";
+import ChallengePlay from "@/features/challenges/ChallengePlay";
+import ChallengeEdit from "@/features/challenges/ChallengeEdit";
 
 // Leaderboard
-import Leaderboard from '@/features/leaderboard/Leaderboard'
-import LeaderboardOverview from '@/features/leaderboard/LeaderboardOverview'
+import Leaderboard from "@/features/leaderboard/Leaderboard";
+import LeaderboardOverview from "@/features/leaderboard/LeaderboardOverview";
+
+// Settings
+import SettingsPage from "@/features/settings/SettingsPage";
 
 export default function App() {
   return (
@@ -57,6 +60,8 @@ export default function App() {
 
               <Route path="/leaderboard" element={<LeaderboardOverview />} />
               <Route path="/leaderboard/:versionId" element={<Leaderboard />} />
+
+              <Route path="/settings" element={<SettingsPage />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/" replace />} />
@@ -64,5 +69,5 @@ export default function App() {
         </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>
-  )
+  );
 }

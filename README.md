@@ -1,4 +1,310 @@
-## The complete structure
+# MyDeck
+
+A flashcard and challenge quiz app built with React 19 + Vite + Cloudflare Workers + D1.
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 19, Vite, React Router 7, Tailwind CSS v4 |
+| Backend | Cloudflare Workers (edge runtime) |
+| Database | Cloudflare D1 (SQLite) |
+| Sessions | Cloudflare KV |
+| AI | Cloudflare Workers AI / Groq / OpenAI / Anthropic |
+| Email | Resend (magic link login) |
+| Auth | Email magic link + GitHub OAuth |
+
+---
+
+## Prerequisites
+
+- Node.js v24 (see `.nvmrc` — run `nvm use` if you use nvm)
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier is enough)
+- A [Resend account](https://resend.com) for magic link emails
+- A GitHub OAuth app for GitHub login
+
+---
+
+## 1. Cloudflare setup
+
+### Create a D1 database
+
+The examples below use `mydeck-db` and `mydeck-sessions` as names — you can use any name you like, just make sure it matches in `worker/wrangler.toml` and `worker/package.json` everywhere.
+
+```bash
+cd worker
+npx wrangler d1 create mydeck-db
+```
+
+Copy the `database_id` from the output and update `worker/wrangler.toml`:
+
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "mydeck-db"   # can be any name — must match here and in package.json scripts
+database_id = "YOUR_DATABASE_ID_HERE"
+```
+
+Also update `worker/package.json` scripts to match:
+
+```json
+"db:init": "wrangler d1 execute mydeck-db --file=schema.sql",
+"db:init:local": "wrangler d1 execute mydeck-db --local --file=schema.sql"
+```
+
+### Create a KV namespace
+
+```bash
+npx wrangler kv namespace create mydeck-sessions
+```
+
+Copy the `id` from the output and update `worker/wrangler.toml`:
+
+```toml
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "YOUR_KV_NAMESPACE_ID_HERE"   # the name above is just a label in Cloudflare dashboard
+```
+
+### Initialize the database schema
+
+```bash
+cd worker
+npx wrangler d1 execute mydeck-db --file=schema.sql --remote
+```
+
+---
+
+## 2. External services setup
+
+### Resend (magic link emails)
+
+1. Sign up at [resend.com](https://resend.com)
+2. Create an API key
+3. Verify your sending domain (or use the Resend sandbox for testing)
+
+### GitHub OAuth app (for GitHub login)
+
+You need **two** OAuth apps — one for production, one for local dev.
+
+**Production app:**
+1. Go to GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
+2. Set **Authorization callback URL** to: `https://your-worker.workers.dev/auth/github/callback`
+3. Save the Client ID and Client Secret
+
+**Local dev app:**
+1. Create another OAuth App
+2. Set **Authorization callback URL** to: `http://localhost:8787/auth/github/callback`
+3. Save the Client ID and Client Secret
+
+---
+
+## 3. Clone and install
+
+```bash
+git clone <repo-url>
+cd mydeck
+
+# Install frontend dependencies
+npm install
+
+# Install worker dependencies
+cd worker && npm install
+```
+
+---
+
+## 4. Configure the worker
+
+### Update wrangler.toml
+
+Edit `worker/wrangler.toml` and set the correct `database_id` and KV `id` from step 1.
+
+Update `[vars]` to match your setup:
+
+```toml
+[vars]
+FROM_EMAIL = "noreply@yourdomain.com"
+AI_DEFAULT_PROVIDER = "openai"      # cloudflare | openai | groq | anthropic
+AI_BASE_URL = ""                     # leave empty for cloudflare
+AI_MODEL = ""                        # leave empty to use the default model
+AI_MAX_RETRIES = "3"
+AI_DAILY_LIMIT_FREE = "10"
+```
+
+### Set production secrets (run once, stored encrypted in Cloudflare)
+
+```bash
+cd worker
+
+npx wrangler secret put RESEND_API_KEY
+# enter your Resend API key
+
+npx wrangler secret put GITHUB_CLIENT_ID
+# enter your production GitHub OAuth Client ID
+
+npx wrangler secret put GITHUB_CLIENT_SECRET
+# enter your production GitHub OAuth Client Secret
+
+npx wrangler secret put FRONTEND_URL
+# enter your production frontend URL, e.g. https://yourdomain.com
+
+npx wrangler secret put AI_API_KEY
+# enter your AI provider API key (leave blank if using Cloudflare Workers AI)
+```
+
+---
+
+## 5. Frontend environment
+
+Create a `.env` file in the project root (copy from `.env.example`):
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```
+VITE_API_URL=https://your-worker.workers.dev
+```
+
+---
+
+## 6. Local development
+
+### Configure local secrets
+
+Create `worker/.dev.vars` (gitignored — never commit this):
+
+```
+# Values here override matching [vars] entries in wrangler.toml during local dev
+
+RESEND_API_KEY=your_resend_api_key
+GITHUB_CLIENT_ID=your_local_github_oauth_client_id
+GITHUB_CLIENT_SECRET=your_local_github_oauth_client_secret
+FRONTEND_URL=http://localhost:5173
+AI_API_KEY=your_ai_provider_api_key
+```
+
+### Configure local frontend URL
+
+Create `.env.local` in the project root (gitignored):
+
+```
+VITE_API_URL=http://localhost:8787
+```
+
+### Initialize the local database
+
+```bash
+cd worker
+npx wrangler d1 execute mydeck-db --local --file=schema.sql
+```
+
+### Run both servers
+
+Open two terminals:
+
+**Terminal 1 — Worker (API):**
+```bash
+cd worker && npm run dev
+```
+Runs on `http://localhost:8787`
+
+**Terminal 2 — Frontend:**
+```bash
+npm run dev
+```
+Runs on `http://localhost:5173`
+
+Open `http://localhost:5173` in your browser.
+
+---
+
+## 7. Deploy to production
+
+### Deploy the worker
+
+```bash
+cd worker && npm run deploy
+```
+
+### Deploy the frontend
+
+Build the frontend and deploy `dist/` to Cloudflare Pages (or any static host):
+
+```bash
+npm run build
+```
+
+Then deploy `dist/` via the Cloudflare dashboard or `wrangler pages deploy dist/`.
+
+---
+
+## Commands reference
+
+### Frontend (project root)
+
+```bash
+npm run dev       # Start dev server (Vite HMR) on localhost:5173
+npm run build     # Production build → dist/
+npm run preview   # Preview production build locally
+npm run lint      # Run ESLint
+```
+
+### Worker (worker/)
+
+```bash
+npm run dev          # Start local worker on localhost:8787
+npm run deploy       # Deploy worker to Cloudflare
+npm run db:init      # Apply schema.sql to remote D1
+npm run db:init:local  # Apply schema.sql to local D1
+```
+
+---
+
+## Environment variables reference
+
+### Frontend (.env / .env.local)
+
+| Variable | Description |
+|---|---|
+| `VITE_API_URL` | Worker base URL (`http://localhost:8787` for local, production URL for prod) |
+
+### Worker (wrangler.toml [vars] — safe to commit)
+
+| Variable | Description |
+|---|---|
+| `FROM_EMAIL` | Sender address for magic link emails |
+| `AI_DEFAULT_PROVIDER` | AI provider: `cloudflare`, `openai`, `groq`, `anthropic`. **Default is `groq`** — see note below. |
+| `AI_BASE_URL` | Base URL for OpenAI-compatible providers (empty for Cloudflare) |
+| `AI_MODEL` | Model name override (empty uses provider default) |
+| `AI_MAX_RETRIES` | Max retries for AI generation (default: 3) |
+| `AI_DAILY_LIMIT_FREE` | Max AI generations per user per day (empty = unlimited) |
+
+> **Why Groq is the default instead of Cloudflare Workers AI**
+>
+> Cloudflare Workers AI runs inside the worker's execution context. While AI inference time itself is excluded from the CPU limit, the free plan has a **30-second wall clock limit** per request — and LLM calls on Workers AI can be slow enough to approach or exceed this. Groq is an external API call that is significantly faster (typically under 3 seconds), making it more reliable for production use. If you switch to `cloudflare`, be aware of this limit, especially on the free plan.
+
+### Worker secrets (wrangler secret put — never commit)
+
+| Secret | Description |
+|---|---|
+| `RESEND_API_KEY` | Resend API key for sending emails |
+| `GITHUB_CLIENT_ID` | GitHub OAuth app Client ID |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth app Client Secret |
+| `FRONTEND_URL` | Frontend base URL (used for OAuth redirects and magic links) |
+| `AI_API_KEY` | API key for the configured AI provider |
+
+---
+
+## Project structure
+
+<details>
+<summary>Click to expand full file tree</summary>
 
 ```
 mydeck/
@@ -38,9 +344,12 @@ mydeck/
 │                                        never commit
 │                                        VITE_API_URL=https://your-worker.dev
 │
+├── .env.local                        ← local dev overrides
+│                                        never commit
+│                                        VITE_API_URL=http://localhost:8787
+│
 ├── .env.example                      ← safe template
 │                                        always commit
-│                                        VITE_API_URL=https://your-worker.dev
 │                                        shows what variables are needed
 │                                        no real values
 │
@@ -69,11 +378,15 @@ mydeck/
 │   │                                    runs on Cloudflare's edge network
 │   │
 │   ├── src/
-│   │   └── index.js                  ← entire API in one file
-│   │                                    CORS, auth, all route handlers
-│   │                                    reads/writes D1 database
-│   │                                    reads/writes KV sessions
-│   │                                    sets httpOnly session cookies
+│   │   ├── index.js                  ← entire API in one file
+│   │   │                                CORS, auth, all route handlers
+│   │   │                                reads/writes D1 database
+│   │   │                                reads/writes KV sessions
+│   │   │                                sets httpOnly session cookies
+│   │   │
+│   │   └── ai.js                     ← AI provider routing and rate limiting
+│   │                                    callAI(), checkRateLimit(), logUsage()
+│   │                                    provider configured via wrangler.toml
 │   │
 │   ├── schema.sql                    ← D1 database schema
 │   │                                    all CREATE TABLE statements
@@ -84,634 +397,49 @@ mydeck/
 │   │                                    KV namespace binding
 │   │                                    environment variables
 │   │
-│   ├── package.json                  ← worker dependencies
-│   │                                    wrangler dev/deploy scripts
+│   ├── .dev.vars                     ← local dev secrets (gitignored)
+│   │                                    overrides wrangler.toml [vars] locally
+│   │                                    never commit
 │   │
-│   └── .wrangler/                    ← local dev state
-│                                        auto generated by wrangler dev
-│                                        local D1 SQLite database
-│                                        never commit
-│
-│  ← SOURCE CODE
-│     everything you write lives here
+│   └── package.json                  ← worker dependencies
+│                                        wrangler dev/deploy scripts
 │
 └── src/
-    │
-    │  ← THREE ENTRY FILES
-    │     fixed names, Vite expects these
-    │
     ├── main.jsx                      ← JavaScript entry point
-    │                                    mounts App into index.html
-    │                                    wraps app in global providers
-    │                                    first file that runs
-    │
-    ├── App.jsx                       ← routing brain
-    │                                    defines all routes
-    │                                    separates public from protected
-    │                                    imports PublicLayout + ProtectedRoute
-    │
-    ├── index.css                     ← global styles (Tailwind CSS v4)
-    │                                    @import "tailwindcss"
-    │                                    @custom-variant dark → data-theme="dark"
-    │                                    @theme { design tokens }
-    │                                    [data-theme="dark"] overrides
-    │                                    minimal custom CSS: spinner, flashcard
-    │                                    flip, quiz-choice states only
-    │
-    │
-    │  ← LAYER 1: GLOBAL STATE
-    │     available to entire app
-    │     not specific to any feature
-    │     grows slowly, stays small
+    ├── App.jsx                       ← routing (all routes defined here)
+    ├── index.css                     ← Tailwind CSS v4 + design tokens
     │
     ├── context/
-    │   │
-    │   ├── AuthContext.jsx           ← who is logged in
-    │   │                                currentUser state
-    │   │                                login(), logout()
-    │   │                                session via httpOnly cookie
-    │   │                                calls /auth/me on page load
-    │   │                                handles #verify= hash for magic link
-    │   │
+    │   ├── AuthContext.jsx           ← logged-in user state + session cookie
     │   └── ThemeContext.jsx          ← dark/light mode
-    │                                    sets data-theme on <html>
-    │                                    saved to localStorage
-    │                                    available everywhere
-    │
-    │
-    │  ← LAYER 2: UTILITIES
-    │     plain JavaScript only
-    │     no React components
-    │     no JSX
-    │     used by features and components
     │
     ├── lib/
-    │   │
-    │   ├── apiClient.js              ← base fetch wrapper
-    │   │                                reads VITE_API_URL from .env
-    │   │                                credentials: 'include' for cookies
-    │   │                                handles 401 errors globally
-    │   │                                handles network errors
-    │   │                                every feature imports this
-    │   │
-    │   ├── cn.js                     ← conditional class utility
-    │   │                                cn('base', condition && 'extra')
-    │   │                                used throughout components
-    │   │
-    │   ├── utils.js                  ← small helper functions
-    │   │                                formatDate()
-    │   │                                truncateText()
-    │   │                                parseCSV()
-    │   │                                downloadCSV()
-    │   │                                escapeHtml()
-    │   │
-    │   └── constants.js              ← app wide fixed values
-    │                                    CATEGORIES = ['Language', 'Science'...]
-    │                                    MAX_CARDS_PER_DECK = 200
-    │                                    DEFAULT_CATEGORY = 'Language'
-    │                                    change once, applies everywhere
-    │
-    │
-    │  ← LAYER 3: SHARED COMPONENTS
-    │     used by MORE than one feature
-    │     no feature specific logic
-    │     no API calls
-    │     pure display and interaction
-    │     the Lego bricks
+    │   ├── apiClient.js              ← base fetch wrapper (reads VITE_API_URL)
+    │   ├── aiApi.js                  ← AI endpoint calls
+    │   ├── cn.js                     ← conditional Tailwind class utility
+    │   ├── utils.js                  ← parseCSV, downloadCSV, escapeHtml
+    │   └── constants.js              ← CATEGORIES, MAX_CARDS_PER_DECK
     │
     ├── components/
-    │   │
-    │   ├── ui/                       ← generic reusable primitives
-    │   │   │                            small, dumb, no logic
-    │   │   │                            receives everything via props
-    │   │   │                            never imports from features/
-    │   │   │                            never imports from lib/apiClient
-    │   │   │                            all styled with Tailwind + cn()
-    │   │   │
-    │   │   ├── Button.jsx            ← used everywhere
-    │   │   │                            variants: primary, danger, outline, ghost
-    │   │   │                            sizes: sm, md, lg
-    │   │   │                            href prop renders as <a>
-    │   │   │
-    │   │   ├── Card.jsx              ← container with shadow and radius
-    │   │   │                            used in every list view
-    │   │   │                            clickable variant adds hover lift
-    │   │   │
-    │   │   ├── Badge.jsx             ← small label pill
-    │   │   │                            solid and outline variants
-    │   │   │
-    │   │   ├── Spinner.jsx           ← loading indicator
-    │   │   │                            center prop wraps in flex justify-center
-    │   │   │
-    │   │   ├── Modal.jsx             ← popup dialog
-    │   │   │                            confirm delete
-    │   │   │                            any popup content
-    │   │   │
-    │   │   ├── EmptyState.jsx        ← no content placeholder
-    │   │   │                            icon + message + optional button
-    │   │   │
-    │   │   ├── Input.jsx             ← labelled text input wrapper
-    │   │   │                            used in all forms
-    │   │   │
-    │   │   ├── Select.jsx            ← labelled dropdown wrapper
-    │   │   │                            category picker
-    │   │   │
-    │   │   ├── Textarea.jsx          ← labelled multiline input wrapper
-    │   │   │                            description fields
-    │   │   │
-    │   │   ├── ProgressBar.jsx       ← study and quiz progress
-    │   │   │                            used in flashcard study
-    │   │   │                            used in challenge play
-    │   │   │
-    │   │   └── Tabs.jsx              ← tab switcher
-    │   │                                my decks / all decks toggle
-    │   │
-    │   └── layout/                   ← structural components
-    │       │                            define the shape of every page
-    │       │
-    │       ├── Header.jsx            ← authenticated app header
-    │       │                            logo, nav (Home, Flashcards,
-    │       │                            Challenges, Leaderboard)
-    │       │                            username, theme toggle, logout
-    │       │                            desktop expanded / mobile hamburger
-    │       │                            shown on every protected page
-    │       │
-    │       ├── PublicHeader.jsx      ← public pages header
-    │       │                            logo, anchor nav links
-    │       │                            theme toggle, Sign In button
-    │       │                            shown on /, /login, /privacy, /terms
-    │       │
-    │       ├── PublicLayout.jsx      ← wraps all public routes
-    │       │                            PublicHeader + Outlet + Footer
-    │       │
-    │       ├── Footer.jsx            ← bottom of every page
-    │       │                            Home · Privacy Policy · Terms links
-    │       │                            copyright
-    │       │
-    │       └── ProtectedRoute.jsx    ← auth gate
-    │                                    checks if logged in
-    │                                    redirects to /login if not
-    │                                    renders Header + Outlet + Footer
-    │
-    │
-    │  ← LAYER 4: FEATURES
-    │     the heart of your app
-    │     each folder = one complete feature
-    │     self contained, everything it needs
-    │     feature specific components stay here
-    │     only promote to components/ if used in 2+ features
-    │     delete a feature = delete one folder, nothing else breaks
+    │   ├── ui/                       ← Button, Card, Badge, Spinner, Modal,
+    │   │                                Input, Select, Textarea, Alert,
+    │   │                                ProgressBar, Tabs, EmptyState,
+    │   │                                BackButton, PreviewModal
+    │   └── layout/                   ← Header, PublicHeader, PublicLayout,
+    │                                    Footer, ProtectedRoute
     │
     └── features/
-        │
-        ├── landing/                  ← PUBLIC
-        │   │                            public-facing home page
-        │   │                            no login needed
-        │   │
-        │   ├── LandingPage.jsx       ← page shell
-        │   │                            composes all sections
-        │   │
-        │   ├── landingContent.js     ← all copy in one place
-        │   │                            HERO, FEATURES, HOW_IT_WORKS, CTA
-        │   │                            edit copy here, layout stays untouched
-        │   │
-        │   └── sections/
-        │       ├── HeroSection.jsx   ← headline + CTA button
-        │       │                        visual slot for future screenshot/graphic
-        │       │
-        │       ├── FeaturesSection.jsx ← 3 feature highlight cards
-        │       │
-        │       ├── HowItWorksSection.jsx ← 3 numbered steps
-        │       │
-        │       └── CTASection.jsx    ← full-width call-to-action band
-        │
-        ├── legal/                    ← PUBLIC
-        │   │                            PDPA-compliant legal pages (Singapore)
-        │   │
-        │   ├── PrivacyPolicy.jsx     ← what data we collect, how used
-        │   │                            linked from login consent notice
-        │   │                            linked from footer
-        │   │
-        │   └── TermsOfService.jsx    ← terms governing use of MyDeck
-        │                                linked from login consent notice
-        │                                linked from footer
-        │
-        ├── auth/                     ← PUBLIC
-        │   │                            no login needed
-        │   │
-        │   ├── AuthPage.jsx          ← full login page
-        │   │                            wraps LoginForm
-        │   │
-        │   ├── LoginForm.jsx         ← email magic link form
-        │   │                            GitHub OAuth button
-        │   │                            passive consent notice (ToS + Privacy)
-        │   │
-        │   └── authApi.js            ← auth API calls
-        │                                POST /auth/magic-link
-        │                                GET  /auth/verify
-        │                                POST /auth/logout
-        │                                GET  /auth/me
-        │                                GET  /auth/github
-        │
-        ├── dashboard/                ← PROTECTED
-        │   │                            first page after login
-        │   │                            summary of everything
-        │   │
-        │   ├── Dashboard.jsx         ← main dashboard
-        │   │                            welcome message
-        │   │                            deck count cards
-        │   │                            leaderboard preview table
-        │   │
-        │   ├── HeroCard.jsx          ← clickable summary card
-        │   │                            flashcards count hero
-        │   │                            challenges count hero
-        │   │
-        │   └── dashboardApi.js       ← dashboard API calls
-        │                                GET /api/leaderboard-summary
-        │                                GET /api/flashcard-decks (count)
-        │                                GET /api/challenge-decks (count)
-        │
-        ├── flashcards/               ← PROTECTED
-        │   │                            full flashcard feature
-        │   │                            list, study, edit
-        │   │
-        │   ├── FlashcardList.jsx     ← all decks grid
-        │   │                            my decks / all decks filter
-        │   │
-        │   ├── FlashcardStudy.jsx    ← study mode
-        │   │                            flip animation
-        │   │                            keyboard shortcuts
-        │   │                            progress bar
-        │   │                            linked challenges
-        │   │
-        │   ├── FlashcardEdit.jsx     ← create and edit deck
-        │   │                            deck metadata form
-        │   │                            card list management
-        │   │                            CSV import/export
-        │   │
-        │   ├── FlashcardCard.jsx     ← single card in study mode
-        │   │                            front and back faces
-        │   │                            flip animation
-        │   │
-        │   ├── FlashcardCardForm.jsx ← add/edit single card form
-        │   │                            front, meaning, note fields
-        │   │
-        │   ├── CsvImport.jsx         ← CSV import flow
-        │   │                            file picker → preview → confirm
-        │   │
-        │   └── flashcardApi.js       ← ALL flashcard endpoints
-        │                                GET    /api/flashcard-decks
-        │                                GET    /api/flashcard-decks/:id
-        │                                POST   /api/flashcard-decks
-        │                                PUT    /api/flashcard-decks/:id
-        │                                POST   /api/flashcard-decks/:id/cards
-        │                                DELETE /api/flashcards/:id
-        │
-        ├── challenges/               ← PROTECTED
-        │   │                            full challenge feature
-        │   │                            list, play, edit
-        │   │
-        │   ├── ChallengeList.jsx     ← all challenges grid
-        │   │                            my challenges / all filter
-        │   │                            leaderboard button per deck
-        │   │
-        │   ├── ChallengePlay.jsx     ← quiz mode orchestrator
-        │   │                            shuffles questions
-        │   │                            tracks answers
-        │   │                            shows results
-        │   │                            submits score to Worker
-        │   │
-        │   ├── ChallengeEdit.jsx     ← create and edit challenge
-        │   │                            deck metadata form
-        │   │                            link flashcard deck
-        │   │                            question management
-        │   │                            publish version button
-        │   │
-        │   ├── QuizQuestion.jsx      ← single question display
-        │   │                            question text + four choices
-        │   │
-        │   ├── QuizChoice.jsx        ← single answer choice button
-        │   │                            correct highlight green
-        │   │                            wrong highlight red
-        │   │
-        │   ├── ResultsCard.jsx       ← score display
-        │   │                            percentage, correct/total
-        │   │                            try again + leaderboard buttons
-        │   │
-        │   ├── QuestionForm.jsx      ← add/edit question form
-        │   │                            question text + 4 choice inputs
-        │   │                            correct answer selector
-        │   │
-        │   ├── CsvImport.jsx         ← CSV import flow (challenge variant)
-        │   │
-        │   └── challengeApi.js       ← ALL challenge endpoints
-        │                                GET    /api/challenge-decks
-        │                                GET    /api/challenge-decks/:id
-        │                                POST   /api/challenge-decks
-        │                                PUT    /api/challenge-decks/:id
-        │                                POST   /api/challenge-decks/:id/cards
-        │                                DELETE /api/challenge-cards/:id
-        │                                POST   /api/challenge-decks/:id/publish
-        │                                POST   /api/scores
-        │
-        └── leaderboard/              ← PROTECTED
-            │                            rankings display
-            │
-            ├── LeaderboardOverview.jsx ← /leaderboard
-            │                             all published challenges
-            │                             table: challenge | 1st | 2nd | 3rd
-            │                             click row → individual leaderboard
-            │
-            ├── Leaderboard.jsx       ← /leaderboard/:versionId
-            │                            full ranked list for one challenge
-            │                            medals for top 3
-            │
-            ├── LeaderboardRow.jsx    ← single rank row
-            │                            medal, username, score
-            │
-            └── leaderboardApi.js     ← leaderboard endpoints
-                                         GET /api/leaderboard/:versionId
-                                         GET /api/leaderboard-summary
+        ├── auth/                     ← AuthPage, LoginForm, authApi.js
+        ├── dashboard/                ← Dashboard, HeroCard, dashboardApi.js
+        ├── flashcards/               ← FlashcardList, FlashcardStudy,
+        │                                FlashcardEdit, CsvImport, flashcardApi.js
+        ├── challenges/               ← ChallengeList, ChallengePlay,
+        │                                ChallengeEdit, CsvImport, challengeApi.js
+        ├── leaderboard/              ← LeaderboardOverview, Leaderboard,
+        │                                leaderboardApi.js
+        ├── landing/                  ← LandingPage, landingContent.js, sections/
+        ├── legal/                    ← PrivacyPolicy, TermsOfService
+        └── settings/                 ← SettingsPage (daily AI usage)
 ```
 
----
-
-## Why this structure scales
-
----
-
-### Reason 1 — Delete a feature safely
-
-```
-want to remove challenges feature entirely?
-
-delete features/challenges/    ← one folder
-remove routes from App.jsx     ← a few lines
-
-nothing else breaks
-no hunting across files
-no leftover code
-```
-
----
-
-### Reason 2 — Add a feature without touching existing code
-
-```
-want to add an AI flashcard generator?
-
-create features/ai/
-├── AiGenerator.jsx
-├── AiResult.jsx
-└── aiApi.js
-
-add one route in App.jsx:
-<Route path="/ai" element={<AiGenerator />} />
-
-done
-zero changes to existing features
-zero risk of breaking anything
-```
-
----
-
-### Reason 3 — Find anything in under 10 seconds
-
-```
-bug in flashcard API call?
-→ open features/flashcards/flashcardApi.js
-→ all flashcard endpoints in one place
-
-bug in shared button?
-→ open components/ui/Button.jsx
-→ one place, used everywhere
-
-global auth problem?
-→ open context/AuthContext.jsx
-→ all auth logic in one place
-
-base fetch wrapper broken?
-→ open lib/apiClient.js
-→ all HTTP logic in one place
-```
-
----
-
-### Reason 4 — New developer joins
-
-```
-day 1 — they look at folder structure
-→ features/ = what the app does
-→ components/ = shared building blocks
-→ lib/ = utilities
-→ context/ = global state
-
-day 1 — they look at App.jsx
-→ see all routes
-→ understand public vs protected
-→ understand navigation flow
-
-day 2 — they can contribute
-→ structure tells them where everything goes
-→ no asking where to put new code
-```
-
----
-
-### Reason 5 — Each layer has one job
-
-```
-context/      →  global state only
-               →  never has UI components
-               →  never has API endpoints
-
-lib/          →  utilities only
-               →  plain JavaScript
-               →  no React, no JSX
-               →  no feature logic
-
-components/   →  shared display only
-               →  no API calls
-               →  no feature logic
-               →  receives everything via props
-
-features/     →  feature logic and display
-               →  has API calls
-               →  has feature specific components
-               →  never imports from other features
-```
-
----
-
-### Reason 6 — Features never import from each other
-
-```
-# WRONG — features depending on each other
-// features/challenges/ChallengePlay.jsx
-import FlashcardCard from '../flashcards/FlashcardCard'
-//                         ↑
-//                         challenges importing from flashcards
-//                         now they are coupled
-//                         change flashcards = might break challenges
-
-# RIGHT — shared component promoted to components/
-// components/ui/StudyCard.jsx  ← promoted because two features need it
-
-// features/challenges/ChallengePlay.jsx
-import StudyCard from '../../components/ui/StudyCard'  ← from shared
-
-// features/flashcards/FlashcardStudy.jsx
-import StudyCard from '../../components/ui/StudyCard'  ← from shared
-```
-
----
-
-### Reason 7 — The promotion rule prevents premature abstraction
-
-```
-start: build FlashcardCard inside features/flashcards/
-       it only exists for flashcards
-
-later: challenges also needs a similar card
-       NOW promote it to components/ui/
-       rename it to StudyCard
-       both features import from components/ui/
-
-this is the promotion rule:
-→ start in feature
-→ promote when second feature needs it
-→ never promote early just in case
-```
-
----
-
-## The four scaling scenarios
-
----
-
-### Scenario 1 — App gets more features
-
-```
-today:
-features/
-├── landing/
-├── legal/
-├── auth/
-├── dashboard/
-├── flashcards/
-├── challenges/
-└── leaderboard/
-
-added later:
-features/
-├── landing/
-├── legal/
-├── auth/
-├── dashboard/
-├── flashcards/
-├── challenges/
-├── leaderboard/
-├── ai/              ← new: AI flashcard generator
-├── social/          ← new: follow friends
-├── marketplace/     ← new: public deck store
-└── analytics/       ← new: study statistics
-```
-
-Each new feature is a new folder. Nothing existing changes.
-
----
-
-### Scenario 2 — Team grows
-
-```
-solo developer now:
-→ you know where everything is
-→ structure still matters for future you
-
-team of 3 later:
-→ developer A owns features/flashcards/
-→ developer B owns features/challenges/
-→ developer C owns components/ and lib/
-→ clear ownership
-→ rare merge conflicts
-→ features are independent
-```
-
----
-
-### Scenario 3 — Moving to TypeScript
-
-```
-jsx project:
-features/flashcards/flashcardApi.js
-
-tsx project:
-features/flashcards/flashcardApi.ts   ← just rename extension
-                                         add types gradually
-                                         one file at a time
-                                         structure stays identical
-```
-
----
-
-### Scenario 4 — Moving to Next.js later
-
-```
-current React Vite structure:
-src/
-├── features/flashcards/
-│   ├── FlashcardList.jsx
-│   ├── FlashcardStudy.jsx
-│   └── flashcardApi.js
-
-Next.js migration:
-app/
-├── flashcards/
-│   └── page.jsx          ← thin, imports from features/
-
-src/
-├── features/flashcards/
-│   ├── FlashcardList.jsx ← move here unchanged
-│   ├── FlashcardStudy.jsx ← move here unchanged
-│   └── flashcardApi.js   ← move here unchanged
-```
-
-Feature code moves almost unchanged. Only routing layer changes.
-
----
-
-## Simple summary of why this scales
-
-```
-one feature per folder    →  easy to add, delete, own
-never import across       →  features stay independent
-features
-promote when needed       →  no premature abstraction
-one job per layer         →  always know where to look
-App.jsx owns routing      →  one place to see all routes
-lib/ owns utilities       →  one place for shared logic
-context/ owns state       →  one place for global data
-components/ owns UI       →  one place for shared display
-```
-
----
-
-## The one rule that makes everything else work
-
-```
-when you create a new file ask:
-
-is it specific to one feature?
-        │
-        ├── YES → put it inside that feature/
-        │          it will never be missed
-        │          easy to find
-        │          easy to delete
-        │
-        └── NO, used by multiple features?
-                │
-                └── put it in components/ or lib/
-                     shared, stable, reusable
-```
-
-Follow this one rule consistently and the structure scales naturally without thinking about it.
+</details>

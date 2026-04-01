@@ -12,26 +12,26 @@
    Brand colors (primary, success, error, warning) are always fixed. */
 @theme {
   /* Brand */
-  --color-primary:       #0071e3;
+  --color-primary: #0071e3;
   --color-primary-hover: #0062c4;
-  --color-success:       #34c759;
-  --color-error:         #ff3b30;
-  --color-warning:       #ff9f0a;
+  --color-success: #34c759;
+  --color-error: #ff3b30;
+  --color-warning: #ff9f0a;
 
   /* Semantic — light defaults, overridden for dark below */
-  --color-bg:      #f5f5f7;
+  --color-bg: #f5f5f7;
   --color-surface: #ffffff;
-  --color-text:    #1d1d1f;
-  --color-muted:   #86868b;
-  --color-border:  #d2d2d7;
+  --color-text: #1d1d1f;
+  --color-muted: #86868b;
+  --color-border: #d2d2d7;
 
   /* Shadows */
-  --shadow-card:  0 2px 12px rgb(0 0 0 / 0.06);
+  --shadow-card: 0 2px 12px rgb(0 0 0 / 0.06);
   --shadow-hover: 0 4px 20px rgb(0 0 0 / 0.12);
 
   /* Border radius */
-  --radius-card:  12px;
-  --radius-btn:   10px;
+  --radius-card: 12px;
+  --radius-btn: 10px;
   --radius-input: 8px;
 
   /* Animations */
@@ -39,26 +39,37 @@
 }
 
 @keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ─── Dark mode semantic overrides ──────────────────────────────────────────
    Only semantic tokens change — brand colors remain fixed. */
 [data-theme="dark"] {
-  --color-bg:      #1c1c24;
+  --color-bg: #1c1c24;
   --color-surface: #26263a;
-  --color-text:    #f5f5f7;
-  --color-muted:   #98989d;
-  --color-border:  #38383a;
-  --shadow-card:   0 2px 12px rgb(0 0 0 / 0.3);
+  --color-text: #f5f5f7;
+  --color-muted: #98989d;
+  --color-border: #38383a;
+  --shadow-card: 0 2px 12px rgb(0 0 0 / 0.3);
 }
 
 /* ─── Base ───────────────────────────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background-color: var(--color-bg);
   color: var(--color-text);
   min-height: 100vh;
@@ -68,8 +79,8 @@ body {
 /* ─── Native form elements ───────────────────────────────────────────────────
    Global reset so all inputs look consistent without needing Tailwind
    classes on every native element in every component. */
-input[type='text'],
-input[type='email'],
+input[type="text"],
+input[type="email"],
 textarea,
 select {
   width: 100%;
@@ -84,12 +95,28 @@ select {
 }
 input:focus,
 textarea:focus,
-select:focus { border-color: var(--color-primary); }
-textarea { resize: vertical; min-height: 80px; }
+select:focus {
+  border-color: var(--color-primary);
+}
+textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* ─── Number input steppers ──────────────────────────────────────────────────
+   Always show the up/down arrows on number inputs (hidden until hover by default). */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 1;
+}
 
 /* ─── Spinner ────────────────────────────────────────────────────────────────
    Kept as CSS — @keyframes cannot be expressed as inline Tailwind classes. */
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 .spinner {
   display: inline-block;
@@ -104,7 +131,10 @@ textarea { resize: vertical; min-height: 80px; }
 /* ─── Flashcard 3D flip ──────────────────────────────────────────────────────
    Kept as CSS — the 3D transform + coordinated backface-visibility on two
    sibling elements cannot be expressed cleanly as inline Tailwind classes. */
-.flashcard-container { perspective: 1000px; margin: 20px 0; }
+.flashcard-container {
+  perspective: 1000px;
+  margin: 20px 0;
+}
 
 .flashcard {
   width: 100%;
@@ -114,7 +144,9 @@ textarea { resize: vertical; min-height: 80px; }
   transform-style: preserve-3d;
   transition: transform 0.6s;
 }
-.flashcard.flipped { transform: rotateY(180deg); }
+.flashcard.flipped {
+  transform: rotateY(180deg);
+}
 
 .flashcard-face {
   position: absolute;
@@ -131,7 +163,9 @@ textarea { resize: vertical; min-height: 80px; }
   justify-content: center;
   padding: 32px;
 }
-.flashcard-back { transform: rotateY(180deg); }
+.flashcard-back {
+  transform: rotateY(180deg);
+}
 
 /* ─── Quiz choice states ─────────────────────────────────────────────────────
    Kept as CSS — named states (correct/wrong/selected) on a :disabled element
@@ -150,8 +184,21 @@ textarea { resize: vertical; min-height: 80px; }
   transition: all 0.3s ease;
   text-align: left;
 }
-.quiz-choice:hover:not(:disabled) { border-color: var(--color-primary); }
-.quiz-choice.selected  { border-color: var(--color-primary); background-color: rgb(0 113 227 / 0.1); }
-.quiz-choice.correct   { border-color: var(--color-success); background-color: rgb(52 199 89 / 0.1); }
-.quiz-choice.wrong     { border-color: var(--color-error);   background-color: rgb(255 59 48 / 0.1); }
-.quiz-choice:disabled  { cursor: default; }
+.quiz-choice:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+.quiz-choice.selected {
+  border-color: var(--color-primary);
+  background-color: rgb(0 113 227 / 0.1);
+}
+.quiz-choice.correct {
+  border-color: var(--color-success);
+  background-color: rgb(52 199 89 / 0.1);
+}
+.quiz-choice.wrong {
+  border-color: var(--color-error);
+  background-color: rgb(255 59 48 / 0.1);
+}
+.quiz-choice:disabled {
+  cursor: default;
+}

@@ -7,8 +7,7 @@ import { NAV } from '@/features/landing/landingContent'
 
 export default function PublicHeader() {
   const navigate = useNavigate()
-  const { theme, toggleTheme } = useTheme()
-  const isDark = theme === 'dark'
+  const { toggleTheme } = useTheme()
 
   return (
     <header

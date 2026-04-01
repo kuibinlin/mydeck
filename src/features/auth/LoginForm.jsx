@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
+import Alert from '@/components/ui/Alert'
 import { requestMagicLink } from './authApi'
 
 // Handles email + optional username → magic link flow
@@ -38,14 +39,7 @@ export default function LoginForm() {
 
   return (
     <>
-      {msg && (
-        <div className={msg.type === 'error'
-          ? 'p-2.5 px-3.5 rounded-lg mb-4 text-sm bg-red-100 text-red-700 dark:bg-red-900/15 dark:text-[#ff6b6b]'
-          : 'p-2.5 px-3.5 rounded-lg mb-4 text-sm bg-green-100 text-green-700 dark:bg-green-900/15 dark:text-[#6ee7a0]'
-        }>
-          {msg.text}
-        </div>
-      )}
+      {msg && <Alert variant={msg.type}>{msg.text}</Alert>}
 
       <div className="mb-4">
         <input

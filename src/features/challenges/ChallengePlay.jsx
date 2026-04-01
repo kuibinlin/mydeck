@@ -32,11 +32,16 @@ export default function ChallengePlay() {
         setLinkedFcDecks(data.linked_flashcard_decks || [])
         if (data.version) {
           setVersionId(data.version.id)
-          // shuffle cards
-          setCards([...data.cards].sort(() => Math.random() - 0.5))
+          // Fisher-Yates shuffle for unbiased randomisation
+          const arr = [...data.cards]
+          for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]]
+          }
+          setCards(arr)
         }
       })
-      .catch(err => { alert(err.message); navigate('/challenges') })
+      .catch(() => navigate('/challenges'))
       .finally(() => setLoading(false))
   }, [id, navigate])
 
