@@ -80,6 +80,15 @@ export default function Header() {
           >
             <i className="fas fa-circle-half-stroke" />
           </button>
+          <a
+            href="https://github.com/kuibinlin/mydeck"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Source code"
+            className="inline-flex items-center justify-center px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-colors border-0"
+          >
+            <i className="fab fa-github" />
+          </a>
           <button
             onClick={() => handleNav("/settings")}
             title="Settings"
