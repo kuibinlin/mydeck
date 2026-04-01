@@ -430,34 +430,31 @@ mydeck/
 ├── vite.config.js                    ← path alias @/ → src/, Tailwind plugin
 ├── eslint.config.js                  ← ESLint flat config
 ├── package.json                      ← frontend dependencies and scripts
+├── package-lock.json                 ← lock exact version of every installed dependency
 ├── .nvmrc                            ← locks Node version to v24
-├── .env                              ← your secrets (never commit)
-├── .env.local                        ← local dev URL override (never commit)
+├── .env                              ← your secrets (NEVER COMMIT)
+├── .env.local                        ← local dev URL override (NEVER COMMIT)
 ├── .env.example                      ← template showing required variables
-├── CLAUDE.md                         ← AI coding assistant guidance
+├── .gitignore                        ← ensure certain files not tracked by Git remain untracked
 ├── LICENSE                           ← project license
-│
-├── public/                           ← static assets (served as-is)
-│   ├── _redirects                    ← SPA redirect rules (Cloudflare Pages / Netlify)
-│   ├── favicon.svg                   ← browser tab icon
-│   └── icons.svg                     ← shared SVG icon sprite
-│
-├── notes/                            ← internal dev notes (not part of the app)
-│   ├── architecture-and-ai-expansion.md
-│   └── cloudflare-commands.md
 │
 ├── worker/                           ← Cloudflare Worker (API backend)
 │   ├── src/
 │   │   ├── index.js                  ← all route handlers, auth, CORS, admin logic
 │   │   └── ai.js                     ← AI provider routing, rate limiting, validation
 │   ├── schema.sql                    ← D1 database schema (all CREATE TABLE statements)
-│   ├── reset.sql                     ← drops all tables (use with caution)
 │   ├── wrangler.toml                 ← Worker config: name, D1, KV, AI binding, vars
 │   ├── wrangler.toml.example         ← template for wrangler.toml
 │   ├── .dev.vars                     ← local secrets override (never commit)
+│   ├── package-lock.json             ← lock exact version of every installed dependency.
 │   └── package.json                  ← worker dependencies and wrangler scripts
 │
-└── src/
+├── public/                           ← static assets (served as-is)
+│   ├── _redirects                    ← SPA redirect rules (Cloudflare Pages / Netlify)
+│   ├── favicon.svg                   ← browser tab icon
+│   └── icons.svg                     ← shared SVG icon sprite
+│
+└── src/                              ← React frontend
     ├── main.jsx                      ← React entry point
     ├── App.jsx                       ← all routes defined here
     ├── index.css                     ← Tailwind CSS v4 config + design tokens
@@ -535,12 +532,14 @@ mydeck/
         │   ├── LandingPage.jsx       ← public homepage
         │   ├── landingContent.js     ← all copy/text content
         │   └── sections/
-        │       ├── HeroSection.jsx   ← hero banner with CTA
-        │       ├── FeaturesSection.jsx ← feature cards grid
-        │       ├── HowItWorksSection.jsx ← step-by-step explainer
-        │       ├── HeroMockCard.jsx  ← animated flashcard demo
-        │       └── CTASection.jsx    ← bottom call-to-action
-        └── legal/                    ← PrivacyPolicy, TermsOfService
+        │       ├── HeroSection.jsx         ← hero banner with CTA
+        │       ├── FeaturesSection.jsx     ← feature cards grid
+        │       ├── HowItWorksSection.jsx   ← step-by-step explainer
+        │       ├── HeroMockCard.jsx        ← animated flashcard demo
+        │       └── CTASection.jsx          ← bottom call-to-action
+        └── legal/                          ← PrivacyPolicy, TermsOfService
+        │   ├── PrivacyPolicy.jsx           ← PrivacyPolicy
+        └── └── TermsOfService.jsx          ← TermsOfService
 ```
 
 </details>
