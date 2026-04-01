@@ -76,7 +76,7 @@ export default function Header() {
           <button
             onClick={toggleTheme}
             title="Toggle theme"
-            className="inline-flex items-center justify-center px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-colors cursor-pointer border-0"
+            className="inline-flex items-center justify-center px-2.5 py-1.5 text-lg bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-colors cursor-pointer border-0"
           >
             <i className="fas fa-circle-half-stroke" />
           </button>
@@ -85,7 +85,7 @@ export default function Header() {
             target="_blank"
             rel="noopener noreferrer"
             title="Source code"
-            className="inline-flex items-center justify-center px-2.5 py-1.5 text-sm bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-colors border-0"
+            className="inline-flex items-center justify-center px-2.5 py-1.5 text-lg bg-transparent text-muted hover:text-text font-semibold rounded-btn transition-colors border-0"
           >
             <i className="fab fa-github" />
           </a>
