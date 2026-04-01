@@ -12,26 +12,74 @@ A flashcard and challenge quiz app built with React 19 + Vite + Cloudflare Worke
 | Backend | Cloudflare Workers (edge runtime) |
 | Database | Cloudflare D1 (SQLite) |
 | Sessions | Cloudflare KV |
-| AI | Cloudflare Workers AI / Groq / OpenAI / Anthropic |
+| AI | Cloudflare Workers AI (default) / Groq / OpenAI / Anthropic |
 | Email | Resend (magic link login) |
 | Auth | Email magic link + GitHub OAuth |
+
+---
+
+## Why Cloudflare — and what each service does
+
+This project runs almost entirely on the Cloudflare free tier. Because the backend is already a Cloudflare Worker, it makes sense to use the rest of the Cloudflare ecosystem — everything is in one place, one dashboard, and one billing account.
+
+### Cloudflare Workers (backend runtime)
+Your API runs as a Worker — serverless JavaScript that runs at Cloudflare's edge locations worldwide. There are no servers to manage and no cold start delays.
+
+**Free tier:** 100,000 requests/day, 10ms CPU time per request.
+
+### Cloudflare D1 (database)
+D1 is a SQLite database that lives inside Cloudflare. Your Worker reads and writes it directly without any network round trip. It stores users, decks, flashcards, challenge questions, scores, and AI usage logs.
+
+**Free tier:** 5 million row reads/day, 100,000 row writes/day — more than enough for a personal or small team app.
+
+### Cloudflare KV (key-value store)
+KV stores user sessions and magic link tokens. It is a simple key → value store with TTL support (tokens auto-expire). Sessions are stored here so the Worker can look up "who is this cookie?" without a database query.
+
+**Free tier:** 100,000 reads/day, 1,000 writes/day.
+
+### Cloudflare Workers AI
+Workers AI gives your Worker access to large language models without any external API key or billing setup. The AI binding (`env.AI`) runs inference directly inside Cloudflare's infrastructure. This is the **default AI provider** in this project.
+
+**Free tier:** Included with the Workers free plan. No separate billing.
+
+> **Note on Cloudflare Workers AI limits:** The free Workers plan has a **30-second wall clock limit** per request. LLM inference on Workers AI can take several seconds for larger outputs. If you hit this limit in production, switch to **Groq** (free tier, much faster) by setting `AI_DEFAULT_PROVIDER = "groq"` in `wrangler.toml` and providing an `AI_API_KEY` secret. See the environment variables section for details.
+
+### Cloudflare Pages (optional — frontend hosting)
+The built frontend (`dist/`) can be deployed to Cloudflare Pages. This is optional — any static host works (Netlify, Vercel, GitHub Pages, etc.).
+
+**Free tier:** Unlimited bandwidth, 500 builds/month.
 
 ---
 
 ## Prerequisites
 
 - Node.js v24 (see `.nvmrc` — run `nvm use` if you use nvm)
-- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier is enough)
-- A [Resend account](https://resend.com) for magic link emails
-- A GitHub OAuth app for GitHub login
+- **A [Cloudflare account](https://dash.cloudflare.com/sign-up) — free, no credit card required**
+- A [Resend account](https://resend.com) for sending magic link emails (free tier: 3,000 emails/month)
+- A GitHub OAuth app for GitHub login (free, takes 2 minutes to create)
 
 ---
 
-## 1. Cloudflare setup
+## 1. Cloudflare account setup
+
+Sign up at [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up). The free plan covers everything this project needs.
+
+Then log in with Wrangler (the Cloudflare CLI):
+
+```bash
+cd worker
+npx wrangler login
+```
+
+This opens a browser window — authorize Wrangler to access your Cloudflare account.
+
+---
+
+## 2. Create Cloudflare resources
+
+The examples below use `mydeck-db` and `mydeck-sessions` as names. You can choose any names — just make sure they match in `worker/wrangler.toml` everywhere.
 
 ### Create a D1 database
-
-The examples below use `mydeck-db` and `mydeck-sessions` as names — you can use any name you like, just make sure it matches in `worker/wrangler.toml` and `worker/package.json` everywhere.
 
 ```bash
 cd worker
@@ -43,14 +91,14 @@ Copy the `database_id` from the output and update `worker/wrangler.toml`:
 ```toml
 [[d1_databases]]
 binding = "DB"
-database_name = "mydeck-db"   # can be any name — must match here and in package.json scripts
+database_name = "mydeck-db"
 database_id = "YOUR_DATABASE_ID_HERE"
 ```
 
-Also update `worker/package.json` scripts to match:
+Also update the database name in `worker/package.json` scripts to match:
 
 ```json
-"db:init": "wrangler d1 execute mydeck-db --file=schema.sql",
+"db:init": "wrangler d1 execute mydeck-db --file=schema.sql --remote",
 "db:init:local": "wrangler d1 execute mydeck-db --local --file=schema.sql"
 ```
 
@@ -65,7 +113,7 @@ Copy the `id` from the output and update `worker/wrangler.toml`:
 ```toml
 [[kv_namespaces]]
 binding = "SESSIONS"
-id = "YOUR_KV_NAMESPACE_ID_HERE"   # the name above is just a label in Cloudflare dashboard
+id = "YOUR_KV_NAMESPACE_ID_HERE"
 ```
 
 ### Initialize the database schema
@@ -77,31 +125,44 @@ npx wrangler d1 execute mydeck-db --file=schema.sql --remote
 
 ---
 
-## 2. External services setup
+## 3. GitHub OAuth setup
 
-### Resend (magic link emails)
+You need **two** OAuth apps — one for production, one for local dev (different callback URLs).
 
-1. Sign up at [resend.com](https://resend.com)
-2. Create an API key
-3. Verify your sending domain (or use the Resend sandbox for testing)
+### Create the production OAuth app
 
-### GitHub OAuth app (for GitHub login)
+1. Go to [GitHub → Settings → Developer settings → OAuth Apps](https://github.com/settings/developers)
+2. Click **New OAuth App**
+3. Fill in:
+   - **Application name:** MyDeck (or anything you like)
+   - **Homepage URL:** your frontend URL (e.g. `https://yourdomain.com`)
+   - **Authorization callback URL:** `https://your-worker.workers.dev/auth/github/callback`
+     > Replace `your-worker` with your worker name. You can find it in `worker/wrangler.toml` under `name = "..."`. The full URL is `https://<name>.<your-cloudflare-subdomain>.workers.dev/auth/github/callback`. You can check the exact URL after deploying the worker with `npx wrangler deploy`.
+4. Click **Register application**
+5. On the next page, click **Generate a new client secret**
+6. Save both the **Client ID** and **Client Secret** — you will need them in step 5
 
-You need **two** OAuth apps — one for production, one for local dev.
+### Create the local dev OAuth app
 
-**Production app:**
-1. Go to GitHub → Settings → Developer settings → OAuth Apps → New OAuth App
-2. Set **Authorization callback URL** to: `https://your-worker.workers.dev/auth/github/callback`
-3. Save the Client ID and Client Secret
-
-**Local dev app:**
-1. Create another OAuth App
+1. Create another OAuth App (same steps)
 2. Set **Authorization callback URL** to: `http://localhost:8787/auth/github/callback`
-3. Save the Client ID and Client Secret
+3. Save the **Client ID** and **Client Secret** — used in `worker/.dev.vars` for local dev
 
 ---
 
-## 3. Clone and install
+## 4. Resend setup (magic link emails)
+
+1. Sign up at [resend.com](https://resend.com)
+2. Go to **API Keys** → **Create API Key**
+3. Optionally verify your sending domain (or use `onboarding@resend.dev` for testing)
+4. Update `FROM_EMAIL` in `worker/wrangler.toml` to match your verified domain:
+   ```toml
+   FROM_EMAIL = "noreply@yourdomain.com"
+   ```
+
+---
+
+## 5. Clone and install
 
 ```bash
 git clone <repo-url>
@@ -116,25 +177,29 @@ cd worker && npm install
 
 ---
 
-## 4. Configure the worker
+## 6. Configure the worker
 
 ### Update wrangler.toml
 
-Edit `worker/wrangler.toml` and set the correct `database_id` and KV `id` from step 1.
+Edit `worker/wrangler.toml`. At minimum, update:
 
-Update `[vars]` to match your setup:
+1. The `database_id` and KV `id` from step 2
+2. `FRONTEND_URL` to your frontend's production URL
+3. `FROM_EMAIL` to your verified sending address
 
 ```toml
 [vars]
+FRONTEND_URL = "https://yourdomain.com"
 FROM_EMAIL = "noreply@yourdomain.com"
-AI_DEFAULT_PROVIDER = "openai"      # cloudflare | openai | groq | anthropic
-AI_BASE_URL = ""                     # leave empty for cloudflare
-AI_MODEL = ""                        # leave empty to use the default model
+ADMIN_EMAILS = ""             # comma-separated admin emails, e.g. "you@example.com"
+AI_DEFAULT_PROVIDER = "cloudflare"   # cloudflare | groq | openai | anthropic
 AI_MAX_RETRIES = "3"
-AI_DAILY_LIMIT_FREE = "10"
+AI_DAILY_LIMIT_FREE = "100"   # max AI generations per user per day (empty = unlimited)
 ```
 
-### Set production secrets (run once, stored encrypted in Cloudflare)
+### Set production secrets
+
+Run each command once — secrets are stored encrypted in Cloudflare and never leave it:
 
 ```bash
 cd worker
@@ -148,18 +213,16 @@ npx wrangler secret put GITHUB_CLIENT_ID
 npx wrangler secret put GITHUB_CLIENT_SECRET
 # enter your production GitHub OAuth Client Secret
 
-npx wrangler secret put FRONTEND_URL
-# enter your production frontend URL, e.g. https://yourdomain.com
-
+# Only needed if using Groq, OpenAI, or Anthropic as AI provider:
 npx wrangler secret put AI_API_KEY
-# enter your AI provider API key (leave blank if using Cloudflare Workers AI)
+# enter your external AI provider API key
 ```
 
 ---
 
-## 5. Frontend environment
+## 7. Frontend environment
 
-Create a `.env` file in the project root (copy from `.env.example`):
+Create a `.env` file in the project root:
 
 ```bash
 cp .env.example .env
@@ -173,21 +236,22 @@ VITE_API_URL=https://your-worker.workers.dev
 
 ---
 
-## 6. Local development
+## 8. Local development
 
 ### Configure local secrets
 
-Create `worker/.dev.vars` (gitignored — never commit this):
+Create `worker/.dev.vars` (gitignored — never commit this).
+Values here override matching `[vars]` entries in `wrangler.toml` during local dev only.
 
 ```
-# Values here override matching [vars] entries in wrangler.toml during local dev
-
 RESEND_API_KEY=your_resend_api_key
-GITHUB_CLIENT_ID=your_local_github_oauth_client_id
-GITHUB_CLIENT_SECRET=your_local_github_oauth_client_secret
+GITHUB_CLIENT_ID=your_LOCAL_github_oauth_client_id
+GITHUB_CLIENT_SECRET=your_LOCAL_github_oauth_client_secret
 FRONTEND_URL=http://localhost:5173
-AI_API_KEY=your_ai_provider_api_key
 ```
+
+> If using an external AI provider locally, also add `AI_API_KEY=your_key`.
+> For Cloudflare Workers AI, no key is needed — it uses the `env.AI` binding automatically.
 
 ### Configure local frontend URL
 
@@ -224,7 +288,7 @@ Open `http://localhost:5173` in your browser.
 
 ---
 
-## 7. Deploy to production
+## 9. Deploy to production
 
 ### Deploy the worker
 
@@ -232,15 +296,20 @@ Open `http://localhost:5173` in your browser.
 cd worker && npm run deploy
 ```
 
-### Deploy the frontend
+After deploying, note the worker URL shown in the output (e.g. `https://mydeck-api.yourname.workers.dev`). Use this as the `VITE_API_URL` in your frontend `.env`, and as the callback base URL in your GitHub OAuth app.
 
-Build the frontend and deploy `dist/` to Cloudflare Pages (or any static host):
+### Deploy the frontend
 
 ```bash
 npm run build
 ```
 
-Then deploy `dist/` via the Cloudflare dashboard or `wrangler pages deploy dist/`.
+Deploy `dist/` to Cloudflare Pages or any static host:
+
+```bash
+# Cloudflare Pages (from project root):
+npx wrangler pages deploy dist/
+```
 
 ---
 
@@ -258,9 +327,9 @@ npm run lint      # Run ESLint
 ### Worker (worker/)
 
 ```bash
-npm run dev          # Start local worker on localhost:8787
-npm run deploy       # Deploy worker to Cloudflare
-npm run db:init      # Apply schema.sql to remote D1
+npm run dev            # Start local worker on localhost:8787
+npm run deploy         # Deploy worker to Cloudflare
+npm run db:init        # Apply schema.sql to remote D1
 npm run db:init:local  # Apply schema.sql to local D1
 ```
 
@@ -272,32 +341,31 @@ npm run db:init:local  # Apply schema.sql to local D1
 
 | Variable | Description |
 |---|---|
-| `VITE_API_URL` | Worker base URL (`http://localhost:8787` for local, production URL for prod) |
+| `VITE_API_URL` | Worker base URL (`http://localhost:8787` for local, your worker URL for prod) |
 
-### Worker (wrangler.toml [vars] — safe to commit)
+### Worker — wrangler.toml `[vars]` (safe to commit)
 
-| Variable | Description |
-|---|---|
-| `FROM_EMAIL` | Sender address for magic link emails |
-| `AI_DEFAULT_PROVIDER` | AI provider: `cloudflare`, `openai`, `groq`, `anthropic`. **Default is `groq`** — see note below. |
-| `AI_BASE_URL` | Base URL for OpenAI-compatible providers (empty for Cloudflare) |
-| `AI_MODEL` | Model name override (empty uses provider default) |
-| `AI_MAX_RETRIES` | Max retries for AI generation (default: 3) |
-| `AI_DAILY_LIMIT_FREE` | Max AI generations per user per day (empty = unlimited) |
+| Variable | Default | Description |
+|---|---|---|
+| `FRONTEND_URL` | _(your URL)_ | Frontend base URL — used for OAuth redirects and magic link emails |
+| `FROM_EMAIL` | _(your email)_ | Sender address for magic link emails |
+| `ADMIN_EMAILS` | `""` | Comma-separated list of admin emails. Admins can edit/delete any deck. |
+| `AI_DEFAULT_PROVIDER` | `cloudflare` | AI provider: `cloudflare`, `groq`, `openai`, `anthropic` |
+| `AI_MODEL` | _(provider default)_ | Model name override — leave empty to use the provider's default model |
+| `AI_BASE_URL` | _(provider default)_ | Base URL override for OpenAI-compatible providers — leave empty for defaults |
+| `AI_MAX_RETRIES` | `3` | How many times to retry if AI returns invalid output |
+| `AI_DAILY_LIMIT_FREE` | `100` | Max AI generations per user per day (empty = unlimited) |
 
-> **Why Groq is the default instead of Cloudflare Workers AI**
->
-> Cloudflare Workers AI runs inside the worker's execution context. While AI inference time itself is excluded from the CPU limit, the free plan has a **30-second wall clock limit** per request — and LLM calls on Workers AI can be slow enough to approach or exceed this. Groq is an external API call that is significantly faster (typically under 3 seconds), making it more reliable for production use. If you switch to `cloudflare`, be aware of this limit, especially on the free plan.
+> **Cloudflare Workers AI is the default.** No API key is needed — inference runs inside Cloudflare using the `env.AI` Workers AI binding. If you hit the 30-second request timeout on large outputs, switch to `groq` (free, fast) by changing `AI_DEFAULT_PROVIDER` and adding `AI_API_KEY` as a secret.
 
-### Worker secrets (wrangler secret put — never commit)
+### Worker — secrets (set via `wrangler secret put`, never committed)
 
-| Secret | Description |
-|---|---|
-| `RESEND_API_KEY` | Resend API key for sending emails |
-| `GITHUB_CLIENT_ID` | GitHub OAuth app Client ID |
-| `GITHUB_CLIENT_SECRET` | GitHub OAuth app Client Secret |
-| `FRONTEND_URL` | Frontend base URL (used for OAuth redirects and magic links) |
-| `AI_API_KEY` | API key for the configured AI provider |
+| Secret | Required | Description |
+|---|---|---|
+| `RESEND_API_KEY` | Yes | Resend API key for sending magic link emails |
+| `GITHUB_CLIENT_ID` | Yes | GitHub OAuth app Client ID |
+| `GITHUB_CLIENT_SECRET` | Yes | GitHub OAuth app Client Secret |
+| `AI_API_KEY` | Only for non-Cloudflare providers | API key for Groq, OpenAI, or Anthropic |
 
 ---
 
@@ -309,137 +377,57 @@ npm run db:init:local  # Apply schema.sql to local D1
 ```
 mydeck/
 │
-│  ← ROOT LEVEL
-│     fixed names, cannot change
-│     tool configuration lives here
-│
 ├── index.html                        ← Vite entry point
-│                                        never edit manually
-│                                        Vite injects JS bundle here
+├── vite.config.js                    ← path alias @/ → src/, Tailwind plugin
+├── package.json                      ← frontend dependencies and scripts
+├── .nvmrc                            ← locks Node version to v24
+├── .env                              ← your secrets (never commit)
+├── .env.local                        ← local dev URL override (never commit)
+├── .env.example                      ← template showing required variables
 │
-├── vite.config.js                    ← Vite configuration
-│                                        base URL for Cloudflare Pages
-│                                        path aliases like @/
-│                                        plugins (@tailwindcss/vite)
-│
-├── package.json                      ← project manifest
-│                                        dependencies
-│                                        npm scripts
-│
-├── package-lock.json                 ← exact versions locked
-│                                        auto generated
-│                                        commit to git
-│                                        ensures everyone uses same versions
-│
-├── .nvmrc                            ← locks Node version
-│                                        contains: 24
-│                                        nvm use reads this automatically
-│
-├── .gitignore                        ← what git never tracks
-│                                        node_modules/
-│                                        dist/
-│                                        .env
-│
-├── .env                              ← your real secrets
-│                                        never commit
-│                                        VITE_API_URL=https://your-worker.dev
-│
-├── .env.local                        ← local dev overrides
-│                                        never commit
-│                                        VITE_API_URL=http://localhost:8787
-│
-├── .env.example                      ← safe template
-│                                        always commit
-│                                        shows what variables are needed
-│                                        no real values
-│
-├── node_modules/                     ← installed packages
-│                                        auto generated
-│                                        never commit
-│                                        never touch manually
-│
-├── dist/                             ← built output
-│                                        auto generated by npm run build
-│                                        deployed to Cloudflare Pages
-│                                        never edit manually
-│
-├── public/                           ← static files
-│   │                                    served exactly as-is
-│   │                                    not processed by Vite
-│   │                                    referenced by exact URL path
-│   │
-│   ├── favicon.ico                   ← /favicon.ico
-│   ├── robots.txt                    ← /robots.txt
-│   └── og-image.png                  ← /og-image.png
-│
-├── worker/                           ← Cloudflare Worker API backend
-│   │                                    separate project with its own package.json
-│   │                                    deployed independently via wrangler deploy
-│   │                                    runs on Cloudflare's edge network
-│   │
+├── worker/                           ← Cloudflare Worker (API backend)
 │   ├── src/
-│   │   ├── index.js                  ← entire API in one file
-│   │   │                                CORS, auth, all route handlers
-│   │   │                                reads/writes D1 database
-│   │   │                                reads/writes KV sessions
-│   │   │                                sets httpOnly session cookies
-│   │   │
-│   │   └── ai.js                     ← AI provider routing and rate limiting
-│   │                                    callAI(), checkRateLimit(), logUsage()
-│   │                                    provider configured via wrangler.toml
-│   │
-│   ├── schema.sql                    ← D1 database schema
-│   │                                    all CREATE TABLE statements
-│   │                                    run via wrangler d1 execute
-│   │
-│   ├── wrangler.toml                 ← Cloudflare Worker configuration
-│   │                                    D1 database binding
-│   │                                    KV namespace binding
-│   │                                    environment variables
-│   │
-│   ├── .dev.vars                     ← local dev secrets (gitignored)
-│   │                                    overrides wrangler.toml [vars] locally
-│   │                                    never commit
-│   │
-│   └── package.json                  ← worker dependencies
-│                                        wrangler dev/deploy scripts
+│   │   ├── index.js                  ← all route handlers, auth, CORS, admin logic
+│   │   └── ai.js                     ← AI provider routing, rate limiting, validation
+│   ├── schema.sql                    ← D1 database schema (all CREATE TABLE statements)
+│   ├── wrangler.toml                 ← Worker config: name, D1, KV, AI binding, vars
+│   ├── .dev.vars                     ← local secrets override (never commit)
+│   └── package.json                  ← worker dependencies and wrangler scripts
 │
 └── src/
-    ├── main.jsx                      ← JavaScript entry point
-    ├── App.jsx                       ← routing (all routes defined here)
-    ├── index.css                     ← Tailwind CSS v4 + design tokens
+    ├── main.jsx                      ← React entry point
+    ├── App.jsx                       ← all routes defined here
+    ├── index.css                     ← Tailwind CSS v4 config + design tokens
     │
     ├── context/
-    │   ├── AuthContext.jsx           ← logged-in user state + session cookie
-    │   └── ThemeContext.jsx          ← dark/light mode
+    │   ├── AuthContext.jsx           ← session cookie, user state, isAdmin flag
+    │   └── ThemeContext.jsx          ← dark/light mode (localStorage)
     │
     ├── lib/
     │   ├── apiClient.js              ← base fetch wrapper (reads VITE_API_URL)
-    │   ├── aiApi.js                  ← AI endpoint calls
+    │   ├── aiApi.js                  ← AI endpoint wrappers
     │   ├── cn.js                     ← conditional Tailwind class utility
-    │   ├── utils.js                  ← parseCSV, downloadCSV, escapeHtml
-    │   └── constants.js              ← CATEGORIES, MAX_CARDS_PER_DECK
+    │   ├── utils.js                  ← parseCSV, downloadCSV, escapeHtml, shuffle
+    │   └── constants.js              ← CATEGORIES, MAX_CARDS_PER_DECK (50)
     │
     ├── components/
-    │   ├── ui/                       ← Button, Card, Badge, Spinner, Modal,
-    │   │                                Input, Select, Textarea, Alert,
-    │   │                                ProgressBar, Tabs, EmptyState,
-    │   │                                BackButton, PreviewModal
+    │   ├── ui/                       ← Alert, Button, Card, Badge, Spinner, Modal,
+    │   │                                Input, Select, Textarea, ProgressBar,
+    │   │                                Tabs, EmptyState, BackButton
     │   └── layout/                   ← Header, PublicHeader, PublicLayout,
     │                                    Footer, ProtectedRoute
     │
     └── features/
         ├── auth/                     ← AuthPage, LoginForm, authApi.js
         ├── dashboard/                ← Dashboard, HeroCard, dashboardApi.js
-        ├── flashcards/               ← FlashcardList, FlashcardStudy,
-        │                                FlashcardEdit, CsvImport, flashcardApi.js
-        ├── challenges/               ← ChallengeList, ChallengePlay,
-        │                                ChallengeEdit, CsvImport, challengeApi.js
-        ├── leaderboard/              ← LeaderboardOverview, Leaderboard,
-        │                                leaderboardApi.js
-        ├── landing/                  ← LandingPage, landingContent.js, sections/
-        ├── legal/                    ← PrivacyPolicy, TermsOfService
-        └── settings/                 ← SettingsPage (daily AI usage)
+        ├── flashcards/               ← FlashcardList, FlashcardStudy, FlashcardEdit,
+        │                                CsvImport, flashcardApi.js
+        ├── challenges/               ← ChallengeList, ChallengePlay, ChallengeEdit,
+        │                                CsvImport, challengeApi.js
+        ├── leaderboard/              ← LeaderboardOverview, Leaderboard, leaderboardApi.js
+        ├── settings/                 ← SettingsPage (daily AI usage)
+        ├── landing/                  ← LandingPage, sections/, landingContent.js
+        └── legal/                    ← PrivacyPolicy, TermsOfService
 ```
 
 </details>
