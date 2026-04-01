@@ -138,7 +138,7 @@ export default function ChallengeList() {
                       <i className="fas fa-medal" /> Leaderboard
                     </button>
                   )}
-                  {d.created_by === user?.id && (
+                  {(d.created_by === user?.id || user?.isAdmin) && (
                     <button
                       className="inline-flex items-center gap-1.5 px-3 py-1 text-xs bg-transparent text-primary border border-primary hover:bg-primary hover:text-white font-semibold rounded-btn transition-all cursor-pointer"
                       onClick={e => { e.stopPropagation(); navigate(`/challenges/${d.id}/edit`) }}

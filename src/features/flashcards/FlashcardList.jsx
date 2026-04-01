@@ -114,7 +114,7 @@ export default function FlashcardList() {
                   <span className="shrink-0"><i className="fas fa-folder" style={{ marginRight: 3 }} />{d.category}</span>
                   <span className="shrink-0"><i className="fas fa-user" style={{ marginRight: 3 }} />{d.author || 'Unknown'}</span>
                 </span>
-                {d.created_by === user?.id && (
+                {(d.created_by === user?.id || user?.isAdmin) && (
                   <button
                     className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1 text-xs bg-transparent text-primary border border-primary hover:bg-primary hover:text-white font-semibold rounded-btn transition-all cursor-pointer"
                     onClick={e => { e.stopPropagation(); navigate(`/flashcards/${d.id}/edit`) }}
