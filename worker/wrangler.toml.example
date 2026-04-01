@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# wrangler.toml — Cloudflare Worker configuration
+#
+# Deploy with:
+#   npx wrangler deploy
+#
+# That single command reads this file and deploys the worker with all bindings.
+#
+# Sections in this file:
+#   name             — Worker name registered in Cloudflare dashboard
+#   main             — Entry point bundled and uploaded as the Worker script
+#   compatibility_date — Locks the Workers runtime API version
+#   [[d1_databases]] — Binds env.DB → D1 SQLite database (users, decks, cards)
+#   [[kv_namespaces]] — Binds env.SESSIONS → KV store (sessions, magic links)
+#   [observability]  — Enables request logging in the Cloudflare dashboard
+#   [vars]           — Non-secret env vars (FRONTEND_URL, FROM_EMAIL)
+# ─────────────────────────────────────────────────────────────────────────────
+
+### Worker name — must match the name in your Cloudflare dashboard.
+name = "mydeck-api"
+
+### Entry point for the worker.
+main = "src/index.js"
+
+### Locks the Workers runtime API to a specific date so behaviour
+### doesn't change when Cloudflare ships breaking runtime updates.
+### Update this intentionally, not automatically.
+compatibility_date = "2026-03-24"
+
+### D1 (SQLite) database — stores users, decks, cards, scores.
+### Find the database_id in: Cloudflare dashboard → D1 → mydeck-db
+### binding = how the worker code accesses it (env.DB) — changing this breaks all env.DB calls.
+### database_name = the actual D1 database name in your Cloudflare account.
+[[d1_databases]]
+binding = "DB"
+database_name = "mydeck-db"
+database_id = "xxxxxxxxxxx"
+
+### KV namespace — stores sessions and magic link tokens.
+### Find the id in: Cloudflare dashboard → KV → mydeck-sessions
+### binding = how the worker code accesses it (env.SESSIONS) — changing this breaks all env.SESSIONS calls.
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "xxxxxxxxxxx"
+
+### Enables request logging and tracing in the Cloudflare dashboard.
+[observability]
+enabled = true
+
+### Non-secret environment variables — safe to commit.
+### Secrets (API keys, OAuth credentials) must never go here.
+### Set them once via CLI: npx wrangler secret put <KEY>
+###   - RESEND_API_KEY
+###   - GITHUB_CLIENT_ID
+###   - GITHUB_CLIENT_SECRET
+### For local dev, put secrets in .dev.vars (gitignored).
+[vars]
+FRONTEND_URL = "https://xxxxxxxx.com"
+FROM_EMAIL = "noreply@sendme.dev"
+ADMIN_EMAILS = "admin@gmail.com"  # comma-separated for multiple admins
+AI_MAX_RETRIES = "3"
+AI_DAILY_LIMIT_FREE = "3"
+
+### Cloudflare
+AI_DEFAULT_PROVIDER = "cloudflare"
+AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+
+### Only needed for non-cloudflare endpoint
+# AI_BASE_URL = "https://api.groq.com/openai"
+
+
+### AI_DEFAULT_PROVIDER = "groq"
+### AI_BASE_URL = "https://api.groq.com/openai"
+### AI_MODEL = "llama-3.3-70b-versatile"
+### Tested Cloudflare Model
+    # "@cf/nvidia/nemotron-3-120b-a12b"
+    # "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+    # "@cf/qwen/qwq-32b"
+    # "@cf/meta/llama-4-scout-17b-16e-instruct"
+
+
+# Workers AI binding — gives the worker access to env.AI for LLM inference.
+# Model selection happens at runtime in code, not here.
+[ai]
+binding = "AI"
