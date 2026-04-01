@@ -50,6 +50,16 @@ export function downloadCSV(filename, content) {
   a.click()
 }
 
+// Fisher-Yates shuffle — returns a new shuffled array, does not mutate input
+export function shuffle(arr) {
+  const out = [...arr]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
+
 export function truncateText(str, maxLen = 60) {
   if (!str || str.length <= maxLen) return str
   return str.slice(0, maxLen) + '\u2026'

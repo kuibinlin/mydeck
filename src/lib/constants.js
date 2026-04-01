@@ -14,4 +14,4 @@ export const CATEGORIES = [
 ]
 
 export const DEFAULT_CATEGORY = 'Language'
-export const MAX_CARDS_PER_DECK = 200
+export const MAX_CARDS_PER_DECK = 50

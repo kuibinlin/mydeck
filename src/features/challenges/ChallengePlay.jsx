@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import Spinner from '@/components/ui/Spinner'
+import { shuffle } from '@/lib/utils'
 import ProgressBar from '@/components/ui/ProgressBar'
 import BackButton from '@/components/ui/BackButton'
 import QuizQuestion from './QuizQuestion'
@@ -32,13 +33,7 @@ export default function ChallengePlay() {
         setLinkedFcDecks(data.linked_flashcard_decks || [])
         if (data.version) {
           setVersionId(data.version.id)
-          // Fisher-Yates shuffle for unbiased randomisation
-          const arr = [...data.cards]
-          for (let i = arr.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [arr[i], arr[j]] = [arr[j], arr[i]]
-          }
-          setCards(arr)
+          setCards(shuffle(data.cards))
         }
       })
       .catch(() => navigate('/challenges'))

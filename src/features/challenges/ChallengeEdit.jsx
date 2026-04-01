@@ -196,7 +196,6 @@ export default function ChallengeEdit() {
       if (aiMode === "vocab-deck") {
         if (!linkedFcId) {
           setAiError("Link a flashcard deck first");
-          setAiGenerating(false);
           return;
         }
         const fcDeck = await getFcDeck(linkedFcId);
@@ -207,7 +206,6 @@ export default function ChallengeEdit() {
       } else if (aiMode === "vocab-article") {
         if (!aiArticle.trim()) {
           setAiError("Paste an article first");
-          setAiGenerating(false);
           return;
         }
         data = await generateVocab(
@@ -217,7 +215,6 @@ export default function ChallengeEdit() {
       } else {
         if (!aiArticle.trim()) {
           setAiError("Paste an article first");
-          setAiGenerating(false);
           return;
         }
         data = await generateComprehension(
