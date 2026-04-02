@@ -19,7 +19,7 @@ export default function FlashcardCard({ front, meaning, note, flipped, onClick }
             {meaning}
           </h3>
           {note && (
-            <div className="mt-2 pt-3 border-t border-white/25 text-white text-sm text-center leading-relaxed">
+            <div className="mt-2 pt-3 border-t border-white/25 text-white text-base text-center leading-relaxed">
               {note}
             </div>
           )}
