@@ -1,5 +1,11 @@
 import { HOW_IT_WORKS } from '../landingContent'
 
+const STEP_STYLES = [
+  { bg: 'linear-gradient(135deg, #818cf828 0%, #60a5fa18 100%)', ring: '#818cf830', color: '#818cf8' },
+  { bg: 'linear-gradient(135deg, #22d3ee28 0%, #67e8f918 100%)', ring: '#22d3ee30', color: '#06b6d4' },
+  { bg: 'linear-gradient(135deg, #3b82f650 0%, #60a5fa35 100%)', ring: '#3b82f650', color: '#3b82f6' },
+]
+
 export default function HowItWorksSection() {
   return (
     <section className="relative overflow-hidden" id="how-it-works">
@@ -19,11 +25,10 @@ export default function HowItWorksSection() {
         </div>
         {/* Connector line behind steps */}
         <div className="relative">
-          <div className="absolute top-9 left-[16.67%] right-[16.67%] h-px bg-border max-md:hidden" aria-hidden="true" />
           <div className="grid grid-cols-3 gap-6 relative max-md:grid-cols-1">
-            {HOW_IT_WORKS.map((s) => (
-              <div key={s.step} className="relative text-center px-5 py-6 ring-1 ring-border rounded-card bg-surface">
-                <span className="inline-block text-5xl font-black text-primary/35 dark:text-indigo-400/60 leading-none mb-3">{s.step}</span>
+            {HOW_IT_WORKS.map((s, i) => (
+              <div key={s.step} className="relative text-center px-5 py-6 rounded-card transition-all hover:shadow-hover hover:-translate-y-0.5" style={{ background: STEP_STYLES[i].bg, boxShadow: `0 0 0 1px ${STEP_STYLES[i].ring}` }}>
+                <span className="inline-block text-5xl font-black leading-none mb-3" style={{ color: STEP_STYLES[i].color }}>{s.step}</span>
                 <h3 className="text-base font-bold mb-2 text-text">{s.title}</h3>
                 <p className="text-sm text-muted leading-relaxed">{s.description}</p>
               </div>

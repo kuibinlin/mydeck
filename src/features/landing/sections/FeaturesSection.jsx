@@ -1,5 +1,11 @@
 import { FEATURES } from '../landingContent'
 
+const CARD_STYLES = [
+  { bg: 'linear-gradient(135deg, #818cf828 0%, #60a5fa18 100%)', icon: '#818cf8' },
+  { bg: 'linear-gradient(135deg, #22d3ee28 0%, #67e8f918 100%)', icon: '#06b6d4' },
+  { bg: 'linear-gradient(135deg, #3b82f650 0%, #60a5fa35 100%)', icon: '#3b82f6' },
+]
+
 export default function FeaturesSection() {
   return (
     <section className="relative max-w-6xl mx-auto px-10 py-[72px] max-md:px-6 max-md:py-12 overflow-hidden" id="features">
@@ -13,13 +19,13 @@ export default function FeaturesSection() {
         <p className="text-muted text-base">Three tools. One platform. All yours.</p>
       </div>
       <div className="relative grid grid-cols-3 gap-6 max-md:grid-cols-1">
-        {FEATURES.map(f => (
-          <div key={f.title} className="bg-surface rounded-card border border-border px-6 py-7 transition-all hover:shadow-hover hover:-translate-y-0.5 text-center">
+        {FEATURES.map((f, i) => (
+          <div key={f.title} className="rounded-card border border-border px-6 py-7 transition-all hover:shadow-hover hover:-translate-y-0.5 text-center" style={{ background: CARD_STYLES[i].bg }}>
             <div
               className="w-12 h-12 rounded-xl flex items-center justify-center text-xl mb-4 mx-auto"
-              style={{ background: f.color + '18' }}
+              style={{ background: CARD_STYLES[i].icon + '28', color: CARD_STYLES[i].icon }}
             >
-              <i className={f.icon} style={{ color: f.color }} />
+              <i className={f.icon} />
             </div>
             <h3 className="text-base font-bold mb-2 text-text">{f.title}</h3>
             <p className="text-sm text-muted leading-relaxed">{f.description}</p>
