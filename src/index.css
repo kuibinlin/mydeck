@@ -133,16 +133,20 @@ input[type="number"]::-webkit-outer-spin-button {
    sibling elements cannot be expressed cleanly as inline Tailwind classes. */
 .flashcard-container {
   perspective: 1000px;
-  margin: 20px 0;
+  margin: 24px auto;
+  max-width: 560px;
 }
 
 .flashcard {
   width: 100%;
-  min-height: 280px;
+  aspect-ratio: 4/3;
   position: relative;
   cursor: pointer;
   transform-style: preserve-3d;
-  transition: transform 0.6s;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: var(--radius-card);
+  background: linear-gradient(135deg, #818cf8 0%, #22d3ee 100%);
+  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3);
 }
 .flashcard.flipped {
   transform: rotateY(180deg);
@@ -150,21 +154,22 @@ input[type="number"]::-webkit-outer-spin-button {
 
 .flashcard-face {
   position: absolute;
-  width: 100%;
-  min-height: 280px;
+  inset: 0;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  background-color: var(--color-surface);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 32px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
 }
 .flashcard-back {
   transform: rotateY(180deg);
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 /* ─── Quiz choice states ─────────────────────────────────────────────────────
