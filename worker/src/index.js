@@ -518,8 +518,11 @@ async function handleFlashcardDeckCards(request, env, deckId) {
   )
     .bind(deckId)
     .first();
-  if (cardCount.n >= 50)
-    return json({ error: "Deck has reached the 50-card limit" }, 400, request);
+  const cardLimit = parseInt(env.MAX_CARDS_PER_DECK || "50", 10);
+  if (cardCount.n >= cardLimit) {
+    console.log(`[addFlashcard] deck ${deckId} at limit (${cardLimit})`);
+    return json({ error: `Deck has reached the ${cardLimit}-card limit` }, 400, request);
+  }
 
   if (front.length > 500)
     return json({ error: "Front too long (max 500 chars)" }, 400, request);
@@ -794,8 +797,11 @@ async function handleChallengeDeckCards(request, env, deckId) {
   )
     .bind(deckId)
     .first();
-  if (cardCount.n >= 50)
-    return json({ error: "Deck has reached the 50-card limit" }, 400, request);
+  const questionLimit = parseInt(env.MAX_QUESTIONS_PER_DECK || "50", 10);
+  if (cardCount.n >= questionLimit) {
+    console.log(`[addChallengeCard] deck ${deckId} at limit (${questionLimit})`);
+    return json({ error: `Deck has reached the ${questionLimit}-question limit` }, 400, request);
+  }
 
   if (question.length > 500)
     return json({ error: "Question too long (max 500 chars)" }, 400, request);

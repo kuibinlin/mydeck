@@ -7,11 +7,15 @@ import PreviewModal from "@/components/ui/PreviewModal";
 // CSV import flow for flashcard decks.
 // columns: front | meaning | note (optional)
 // onImport(cards): called with [{front, meaning, note}] after confirm
-export default function CsvImport({ onImport }) {
+// currentCount: cards already in the deck; limit: max allowed — rows beyond the limit are auto-excluded
+export default function CsvImport({ onImport, currentCount = 0, limit = Infinity }) {
   const [preview, setPreview] = useState(null); // [{front, meaning, note, _keep}]
   const [error, setError] = useState(null);
   const [importing, setImporting] = useState(false);
   const inputRef = useRef();
+
+  // How many more cards can be added. Infinity when no limit is set.
+  const available = Number.isFinite(limit) ? Math.max(0, limit - currentCount) : Infinity;
 
   const downloadTemplate = () => {
     downloadCSV(
@@ -49,11 +53,11 @@ export default function CsvImport({ onImport }) {
 
     const cards = rows
       .slice(1)
-      .map((r) => ({
+      .map((r, i) => ({
         front: r[frontIdx] || "",
         meaning: r[meaningIdx] || "",
         note: noteIdx !== -1 ? r[noteIdx] || "" : "",
-        _keep: true,
+        _keep: i < available,
       }))
       .filter((c) => c.front && c.meaning);
 
@@ -82,6 +86,8 @@ export default function CsvImport({ onImport }) {
   };
 
   const kept = preview ? preview.filter((c) => c._keep).length : 0;
+  const initExcluded = preview && Number.isFinite(available) ? Math.max(0, preview.length - available) : 0;
+  const overLimit = preview && Number.isFinite(available) ? Math.max(0, kept - available) : 0;
 
   return (
     <>
@@ -125,6 +131,21 @@ export default function CsvImport({ onImport }) {
           confirmingLabel="Importing…"
           onConfirm={handleConfirm}
         >
+          {(initExcluded > 0 || overLimit > 0) && (
+            <div className={`mx-5 mt-4 flex items-start gap-2 rounded-lg border px-3.5 py-2.5 text-sm ${
+              overLimit > 0
+                ? "border-error/30 bg-error/10 text-error"
+                : "border-warning/30 bg-warning/10 text-warning"
+            }`}>
+              <i className={`fas mt-0.5 shrink-0 ${overLimit > 0 ? "fa-circle-xmark" : "fa-triangle-exclamation"}`} />
+              <span>
+                {overLimit > 0
+                  ? `${overLimit} row${overLimit !== 1 ? "s" : ""} over the ${limit}-card limit — ${overLimit > 1 ? "they" : "it"} will be skipped on import.`
+                  : `${initExcluded} row${initExcluded !== 1 ? "s" : ""} auto-excluded — deck limit is ${limit}${currentCount > 0 ? ` (${currentCount} already added)` : ""}.`
+                }
+              </span>
+            </div>
+          )}
           <div className="px-5 py-3">
             <table className="w-full border-collapse text-sm">
               <thead>

@@ -60,6 +60,8 @@ FROM_EMAIL = "noreply@sendme.dev"
 ADMIN_EMAILS = "admin@gmail.com"  # comma-separated for multiple admins
 AI_MAX_RETRIES = "3"
 AI_DAILY_LIMIT_FREE = "3"
+MAX_CARDS_PER_DECK = "50"       # max flashcards per deck
+MAX_QUESTIONS_PER_DECK = "50"   # max questions per challenge deck
 
 ### Cloudflare
 AI_DEFAULT_PROVIDER = "cloudflare"

@@ -424,7 +424,9 @@ npm run db:init:local  # Apply schema.sql to local D1
 | `AI_MODEL`            | _(provider default)_ | Model name override — leave empty to use the provider's default model        |
 | `AI_BASE_URL`         | _(provider default)_ | Base URL override for OpenAI-compatible providers — leave empty for defaults |
 | `AI_MAX_RETRIES`      | `3`                  | How many times to retry if AI returns invalid output                         |
-| `AI_DAILY_LIMIT_FREE` | `100`                | Max AI generations per user per day (empty = unlimited)                      |
+| `AI_DAILY_LIMIT_FREE`    | `100`                | Max AI generations per user per day (empty = unlimited)                      |
+| `MAX_CARDS_PER_DECK`     | `50`                 | Max flashcards allowed per flashcard deck                                    |
+| `MAX_QUESTIONS_PER_DECK` | `50`                 | Max questions allowed per challenge deck                                     |
 
 > **Cloudflare Workers AI is the default.** No API key is needed — inference runs inside Cloudflare using the `env.AI` Workers AI binding. If you hit the 30-second request timeout on large outputs, switch to `groq` (free, fast) by changing `AI_DEFAULT_PROVIDER` and adding `AI_API_KEY` as a secret.
 

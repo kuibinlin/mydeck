@@ -9,7 +9,7 @@ import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import Textarea from "@/components/ui/Textarea";
 import PreviewModal from "@/components/ui/PreviewModal";
-import { CATEGORIES, DEFAULT_CATEGORY } from "@/lib/constants";
+import { CATEGORIES, DEFAULT_CATEGORY, MAX_CARDS_PER_DECK } from "@/lib/constants";
 import { generateFlashcards } from "@/lib/aiApi";
 import FlashcardCardForm from "./FlashcardCardForm";
 import CsvImport from "./CsvImport";
@@ -139,18 +139,23 @@ export default function FlashcardEdit() {
   };
 
   const handleCsvImport = async (importedCards) => {
+    let added = 0;
+    let skipped = 0;
     for (const c of importedCards) {
       try {
-        await addCard(deckId, {
-          front: c.front,
-          meaning: c.meaning,
-          note: c.note || null,
-        });
+        await addCard(deckId, { front: c.front, meaning: c.meaning, note: c.note || null });
+        added++;
       } catch {
-        /* skip invalid rows */
+        skipped++;
       }
     }
     refreshCards();
+    if (skipped > 0) {
+      setMsg({
+        type: "error",
+        text: `${added} card${added !== 1 ? "s" : ""} imported, ${skipped} skipped — deck limit reached.`,
+      });
+    }
   };
 
   const handleAIGenerate = async () => {
@@ -303,7 +308,7 @@ export default function FlashcardEdit() {
             >
               <i className="fas fa-wand-magic-sparkles" /> AI Generate
             </Button>
-            <CsvImport onImport={handleCsvImport} />
+            <CsvImport onImport={handleCsvImport} currentCount={cards.length} limit={MAX_CARDS_PER_DECK} />
           </div>
         )}
       </div>

@@ -7,11 +7,15 @@ import PreviewModal from "@/components/ui/PreviewModal";
 // CSV import for challenges.
 // columns: question | choice_a | choice_b | choice_c | choice_d | answer (A/B/C/D)
 // onImport(questions): called with [{question, choices, answer}] after confirm
-export default function CsvImport({ onImport }) {
+// currentCount: questions already in the deck; limit: max allowed — rows beyond the limit are auto-excluded
+export default function CsvImport({ onImport, currentCount = 0, limit = Infinity }) {
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState(null);
   const [importing, setImporting] = useState(false);
   const inputRef = useRef();
+
+  // How many more questions can be added. Infinity when no limit is set.
+  const available = Number.isFinite(limit) ? Math.max(0, limit - currentCount) : Infinity;
 
   const downloadTemplate = () => {
     downloadCSV(
@@ -56,13 +60,13 @@ export default function CsvImport({ onImport }) {
     const answerMap = { A: 0, B: 1, C: 2, D: 3, 0: 0, 1: 1, 2: 2, 3: 3 };
     const questions = rows
       .slice(1)
-      .map((r) => {
+      .map((r, i) => {
         const ans = (r[ansIdx] || "").toUpperCase();
         return {
           question: r[qIdx] || "",
           choices: [r[aIdx] || "", r[bIdx] || "", r[cIdx] || "", r[dIdx] || ""],
           answer: answerMap[ans] !== undefined ? answerMap[ans] : -1,
-          _keep: true,
+          _keep: i < available,
         };
       })
       .filter(
@@ -97,6 +101,8 @@ export default function CsvImport({ onImport }) {
 
   const LABELS = ["A", "B", "C", "D"];
   const kept = preview ? preview.filter((q) => q._keep).length : 0;
+  const initExcluded = preview && Number.isFinite(available) ? Math.max(0, preview.length - available) : 0;
+  const overLimit = preview && Number.isFinite(available) ? Math.max(0, kept - available) : 0;
 
   return (
     <>
@@ -140,6 +146,21 @@ export default function CsvImport({ onImport }) {
           confirmingLabel="Importing…"
           onConfirm={handleConfirm}
         >
+          {(initExcluded > 0 || overLimit > 0) && (
+            <div className={`mx-5 mt-4 flex items-start gap-2 rounded-lg border px-3.5 py-2.5 text-sm ${
+              overLimit > 0
+                ? "border-error/30 bg-error/10 text-error"
+                : "border-warning/30 bg-warning/10 text-warning"
+            }`}>
+              <i className={`fas mt-0.5 shrink-0 ${overLimit > 0 ? "fa-circle-xmark" : "fa-triangle-exclamation"}`} />
+              <span>
+                {overLimit > 0
+                  ? `${overLimit} row${overLimit !== 1 ? "s" : ""} over the ${limit}-question limit — ${overLimit > 1 ? "they" : "it"} will be skipped on import.`
+                  : `${initExcluded} row${initExcluded !== 1 ? "s" : ""} auto-excluded — deck limit is ${limit}${currentCount > 0 ? ` (${currentCount} already added)` : ""}.`
+                }
+              </span>
+            </div>
+          )}
           <div className="px-5 py-4 flex flex-col gap-3">
             {preview.map((q, i) => (
               <div

@@ -8,7 +8,7 @@ import Alert from "@/components/ui/Alert";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import PreviewModal from "@/components/ui/PreviewModal";
-import { CATEGORIES, DEFAULT_CATEGORY } from "@/lib/constants";
+import { CATEGORIES, DEFAULT_CATEGORY, MAX_CARDS_PER_DECK } from "@/lib/constants";
 import {
   getDecks as getFcDecks,
   getDeck as getFcDeck,
@@ -172,18 +172,23 @@ export default function ChallengeEdit() {
   };
 
   const handleCsvImport = async (questions) => {
+    let added = 0;
+    let skipped = 0;
     for (const q of questions) {
       try {
-        await addCard(deckId, {
-          question: q.question,
-          choices: q.choices,
-          answer: q.answer,
-        });
+        await addCard(deckId, { question: q.question, choices: q.choices, answer: q.answer });
+        added++;
       } catch {
-        /* skip invalid rows */
+        skipped++;
       }
     }
     refreshCards();
+    if (skipped > 0) {
+      setMsg({
+        type: "error",
+        text: `${added} question${added !== 1 ? "s" : ""} imported, ${skipped} skipped — deck limit reached.`,
+      });
+    }
   };
 
   const handleAIGenerate = async () => {
@@ -437,7 +442,7 @@ export default function ChallengeEdit() {
             >
               <i className="fas fa-wand-magic-sparkles" /> AI Generate
             </Button>
-            <CsvImport onImport={handleCsvImport} />
+            <CsvImport onImport={handleCsvImport} currentCount={cards.length} limit={MAX_CARDS_PER_DECK} />
           </div>
         )}
       </div>
