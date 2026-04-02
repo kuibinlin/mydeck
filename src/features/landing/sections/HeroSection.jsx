@@ -20,9 +20,14 @@ export default function HeroSection() {
           <span className="block">{HERO.headlineLine1}</span>
           <span className="block">{HERO.headlineLine2}</span>
         </h1>
-        <p className="text-3xl max-md:text-base font-semibold leading-relaxed mb-8 max-w-xl bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
+        <p className="text-3xl max-md:text-base font-semibold leading-relaxed mb-5 max-w-xl bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
           {HERO.subheadline}
         </p>
+
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full mb-8 bg-purple-500/10 text-purple-500 dark:text-purple-400 text-sm font-semibold">
+          <i className="fas fa-wand-magic-sparkles text-xs" />
+          {HERO.aiPill}
+        </div>
 
         <div className="flex gap-3 flex-wrap">
           <button

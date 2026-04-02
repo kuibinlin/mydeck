@@ -5,6 +5,7 @@ export const HERO = {
   headlineLine1: 'Built by Learners,',
   headlineLine2: 'for Learners.',
   subheadline: 'Every deck you create helps someone else learn.',
+  aiPill: 'AI Generator for Flashcards & Quizzes',
   ctaPrimary: { label: 'Get Started Free', to: '/login' },
   ctaSecondary: { label: 'Sign In', to: '/login' },
 }
