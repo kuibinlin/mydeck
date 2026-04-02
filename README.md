@@ -147,6 +147,8 @@ cd worker
 npx wrangler d1 execute mydeck-db --file=schema.sql --remote
 ```
 
+> **Note on `sqlite_sequence`:** After the first insert into any table that uses `AUTOINCREMENT`, SQLite automatically creates an internal table called `sqlite_sequence`. It tracks the highest ID ever used for each AUTOINCREMENT table so IDs are never reused, even after rows are deleted. This table is **not** defined in `schema.sql` — SQLite manages it entirely on its own. If you open your D1 database in a viewer and see `sqlite_sequence`, that is expected and harmless.
+
 ### Deploy the worker (first deploy)
 
 You need to deploy the worker now to get its URL — the GitHub OAuth setup in the next step requires it.
