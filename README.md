@@ -4,23 +4,39 @@ A flashcard and challenge quiz app built with React 19 + Vite + Cloudflare Worke
 
 ---
 
+## Live demo
+
+**[mydeck.linsnotes.com](https://mydeck.linsnotes.com)**
+
+Log in with a magic link or GitHub OAuth. Create flashcard decks, generate cards with AI, build challenge quizzes, and compare scores on the leaderboard.
+
+---
+
 ## Tech stack
 
-| Layer    | Technology                                                  |
-| -------- | ----------------------------------------------------------- |
-| Frontend | React 19, Vite, React Router 7, Tailwind CSS v4             |
-| Backend  | Cloudflare Workers (edge runtime)                           |
-| Database | Cloudflare D1 (SQLite)                                      |
-| Sessions | Cloudflare KV                                               |
-| AI       | Cloudflare Workers AI (default) / Groq / OpenAI / Anthropic |
-| Email    | Resend (magic link login)                                   |
-| Auth     | Email magic link + GitHub OAuth                             |
+| Layer    | Technology                                        | Cost                      |
+| -------- | ------------------------------------------------- | ------------------------- |
+| Frontend | React 19, Vite, React Router 7, Tailwind CSS v4   | Free (open source)        |
+| Hosting  | Cloudflare Pages                                  | Free tier                 |
+| Backend  | Cloudflare Workers (edge runtime)                 | Free tier                 |
+| Database | Cloudflare D1 (SQLite)                            | Free tier                 |
+| Sessions | Cloudflare KV                                     | Free tier                 |
+| AI       | Cloudflare Workers AI · Groq · OpenAI · Anthropic | Free tier                 |
+| Email    | Resend (magic link login)                         | Free tier                 |
+| Auth     | Email magic link + GitHub OAuth                   | Free                      |
+| Domain   | linsnotes.com (subdomain: mydeck.linsnotes.com)   | Paid (domain only)        |
 
 ---
 
 ## Why Cloudflare — and what each service does
 
-This project runs almost entirely on the Cloudflare free tier. Because the backend is already a Cloudflare Worker, it makes sense to use the rest of the Cloudflare ecosystem — everything is in one place, one dashboard, and one billing account.
+This project runs almost entirely on the Cloudflare free tier. Because the backend is already a Cloudflare Worker, it makes sense to use the rest of the Cloudflare ecosystem — everything is in one place, one dashboard.
+
+### Cloudflare Pages (frontend hosting)
+
+The built frontend (`dist/`) is a static site — deploy it anywhere. Cloudflare Pages is a natural fit since the backend is already on Cloudflare, but Netlify, Vercel, GitHub Pages, or any static host works just as well.
+
+**Free tier:** Unlimited bandwidth, 500 builds/month.
 
 ### Cloudflare Workers (backend runtime)
 
@@ -44,17 +60,20 @@ KV stores user sessions and magic link tokens. It is a simple key → value stor
 
 Workers AI gives the Worker access to large language models without any external API key or billing setup. The AI binding (`env.AI`) runs inference directly inside Cloudflare's infrastructure. This is the **default AI provider** in this project.
 
-**Free tier:** 10,000 neurons/day (neuron cost scales with model size × token count). No separate billing.
+**Default model:** `@cf/meta/llama-3.3-70b-instruct-fp8-fast` — override with `AI_MODEL` in `wrangler.toml`.
+
+**Tested models:**
+```
+@cf/meta/llama-3.3-70b-instruct-fp8-fast   ← default
+@cf/meta/llama-4-scout-17b-16e-instruct
+@cf/qwen/qwq-32b
+@cf/nvidia/nemotron-3-120b-a12b
+```
+
+**Free tier:** 10,000 neurons/day at no charge, included in both the free and paid Workers plans. Beyond that, you need the Workers Paid plan ($5/month) and are billed at $0.011 per 1,000 neurons. Neuron cost scales with model size and token count.
 
 > **Note on Cloudflare Workers AI limits:** The free Workers plan has a **30-second wall clock limit** per request. AI inference itself does **not** count against the 10ms CPU time limit — the Worker is suspended while waiting for the model response. However, large models (70B+ parameters) with long outputs can take 15–30 seconds per attempt, leaving little margin before the 30-second timeout. With retries enabled (`AI_MAX_RETRIES`), a single request could exceed this limit. If you experience timeouts, either switch to a smaller/faster model (e.g. `@cf/meta/llama-3.1-8b-instruct`) via `AI_MODEL` in `wrangler.toml`, or switch to **Groq** (free tier, ~2–5s per call) by setting `AI_DEFAULT_PROVIDER = "groq"` and providing an `AI_API_KEY` secret. See the environment variables section for details.
 
-### Cloudflare Pages (optional — frontend hosting)
-
-The built frontend (`dist/`) can be deployed to Cloudflare Pages. This is optional — any static host works (Netlify, Vercel, GitHub Pages, etc.).
-
-**Free tier:** Unlimited bandwidth, 500 builds/month.
-
----
 
 ## Prerequisites
 
