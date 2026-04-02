@@ -5,6 +5,7 @@ import ProgressBar from '@/components/ui/ProgressBar'
 import BackButton from '@/components/ui/BackButton'
 import FlashcardCard from './FlashcardCard'
 import { getDeck } from './flashcardApi'
+import { shuffle } from '@/lib/utils'
 
 export default function FlashcardStudy() {
   const { id } = useParams()
@@ -26,12 +27,12 @@ export default function FlashcardStudy() {
         setOriginalCards(data.cards)
         setCards(
           localStorage.getItem('md_shuffle') === 'true'
-            ? [...data.cards].sort(() => Math.random() - 0.5)
+            ? shuffle(data.cards)
             : data.cards
         )
         setLinkedChallenges(data.linked_challenges || [])
       })
-      .catch(err => { alert(err.message); navigate('/flashcards') })
+      .catch(() => navigate('/flashcards'))
       .finally(() => setLoading(false))
   }, [id, navigate])
 
@@ -41,10 +42,7 @@ export default function FlashcardStudy() {
     localStorage.setItem('md_shuffle', String(next))
     setIndex(0)
     setFlipped(false)
-    setCards(next
-      ? [...originalCards].sort(() => Math.random() - 0.5)
-      : originalCards
-    )
+    setCards(next ? shuffle(originalCards) : originalCards)
   }
 
   const flip = useCallback(() => setFlipped(f => !f), [])
