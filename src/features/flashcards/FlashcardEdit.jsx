@@ -280,32 +280,43 @@ export default function FlashcardEdit() {
         </div>
       </div>
 
-      {/* Card editor — shown only after deck is created */}
-      {deckSaved && (
-        <>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-            <h2 className="text-xl font-bold">Cards</h2>
-            <div className="grid grid-cols-2 sm:flex gap-2">
-              <Button
-                size="sm"
-                onClick={() => {
-                  setEditingCard(null);
-                  setShowCardForm(true);
-                }}
-              >
-                <i className="fas fa-plus" /> Add Card
-              </Button>
-              <Button
-                variant="ai"
-                size="sm"
-                onClick={() => setShowAIPanel(!showAIPanel)}
-              >
-                <i className="fas fa-wand-magic-sparkles" /> AI Generate
-              </Button>
-              <CsvImport onImport={handleCsvImport} />
-            </div>
+      {/* Cards section — header always visible so users see the full page shape.
+           Action buttons and content are gated behind deckSaved (deck must exist
+           in the DB before cards can be associated with it). */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <h2 className="text-xl font-bold">Cards</h2>
+        {deckSaved && (
+          <div className="grid grid-cols-2 sm:flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditingCard(null);
+                setShowCardForm(true);
+              }}
+            >
+              <i className="fas fa-plus" /> Add Card
+            </Button>
+            <Button
+              variant="ai"
+              size="sm"
+              onClick={() => setShowAIPanel(!showAIPanel)}
+            >
+              <i className="fas fa-wand-magic-sparkles" /> AI Generate
+            </Button>
+            <CsvImport onImport={handleCsvImport} />
           </div>
+        )}
+      </div>
 
+      {!deckSaved ? (
+        <div className="rounded-card border border-primary/25 bg-primary/8 py-12 px-6 text-center">
+          <i className="fas fa-circle-info text-4xl max-md:text-3xl mb-4 block text-primary" />
+          <p className="text-base max-md:text-sm font-semibold text-primary">
+            Save the deck details above to start adding cards.
+          </p>
+        </div>
+      ) : (
+        <>
           {showAIPanel && (
             <div className="bg-surface rounded-card shadow-card p-5 mb-4 border border-purple-300 dark:border-purple-800">
               <h3 className="text-base font-semibold mb-2">

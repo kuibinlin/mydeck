@@ -70,30 +70,36 @@ export function validateChallengeCards(data) {
 // === Rate Limiting ===
 
 export async function checkRateLimit(user, env) {
-  const plan = "free"; // Look up user's plan tier when paid plans are added
-  const raw = plan === "pro" ? env.AI_DAILY_LIMIT_PRO : env.AI_DAILY_LIMIT_FREE;
-
   // ai_usage_log.user_id is TEXT — cast to string so SQLite type comparison works correctly
   const userId = String(user.id);
 
-  // Empty or unset means no limit
-  if (!raw || raw.trim() === "") {
-    const row = await env.DB.prepare(
+  const usageQuery = () =>
+    env.DB.prepare(
       "SELECT COUNT(*) as count FROM ai_usage_log WHERE user_id = ? AND created_at >= date('now')",
     )
       .bind(userId)
       .first();
+
+  // Admins bypass rate limits entirely so they can test and manage content freely
+  if (env.ADMIN_EMAILS) {
+    const adminEmails = env.ADMIN_EMAILS.split(",").map((e) => e.trim());
+    if (adminEmails.includes(user.email)) {
+      const row = await usageQuery();
+      return { limited: false, used: row.count, limit: null };
+    }
+  }
+
+  const plan = "free"; // Look up user's plan tier when paid plans are added
+  const raw = plan === "pro" ? env.AI_DAILY_LIMIT_PRO : env.AI_DAILY_LIMIT_FREE;
+
+  // Empty or unset means no limit
+  if (!raw || raw.trim() === "") {
+    const row = await usageQuery();
     return { limited: false, used: row.count, limit: null };
   }
 
   const limit = parseInt(raw, 10);
-
-  const row = await env.DB.prepare(
-    "SELECT COUNT(*) as count FROM ai_usage_log WHERE user_id = ? AND created_at >= date('now')",
-  )
-    .bind(userId)
-    .first();
-
+  const row = await usageQuery();
   const used = row.count;
   return { limited: used >= limit, used, limit };
 }

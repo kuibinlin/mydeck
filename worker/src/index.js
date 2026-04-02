@@ -598,7 +598,7 @@ async function handleChallengeDecks(request, env) {
 
   if (request.method === "POST") {
     const user = await requireUser(request, env);
-    const { title, category, description, linked_flashcard_deck_id } =
+    const { title, category, description, article, linked_flashcard_deck_id } =
       await request.json();
     if (!title || !category)
       return json({ error: "Title and category required" }, 400, request);
@@ -608,9 +608,9 @@ async function handleChallengeDecks(request, env) {
       return json({ error: "Description too long (max 500 chars)" }, 400, request);
 
     const result = await env.DB.prepare(
-      "INSERT INTO challenge_decks (title, category, description, created_by) VALUES (?, ?, ?, ?)",
+      "INSERT INTO challenge_decks (title, category, description, article, created_by) VALUES (?, ?, ?, ?, ?)",
     )
-      .bind(title, category, description || null, user.id)
+      .bind(title, category, description || null, article || null, user.id)
       .run();
 
     const challengeId = result.meta.last_row_id;
@@ -705,28 +705,40 @@ async function handleChallengeDeck(request, env, deckId) {
     const user = await requireUser(request, env);
     await requireDeckOwner(env, "challenge_decks", deckId, user);
 
-    const { title, category, description, linked_flashcard_deck_id } =
-      await request.json();
+    const body = await request.json();
+    const { title, category, description, article } = body;
+
     if (title && title.length > 200)
       return json({ error: "Title too long (max 200 chars)" }, 400, request);
     if (description && description.length > 500)
       return json({ error: "Description too long (max 500 chars)" }, 400, request);
+
     await env.DB.prepare(
-      "UPDATE challenge_decks SET title = COALESCE(?, title), category = COALESCE(?, category), description = COALESCE(?, description) WHERE id = ?",
+      `UPDATE challenge_decks
+       SET title       = COALESCE(?, title),
+           category    = COALESCE(?, category),
+           description = COALESCE(?, description),
+           article     = ?
+       WHERE id = ?`,
     )
-      .bind(title || null, category || null, description || null, deckId)
+      .bind(title || null, category || null, description || null, article || null, deckId)
       .run();
 
-    // Update linked flashcard deck
-    await env.DB.prepare("DELETE FROM deck_links WHERE challenge_deck_id = ?")
-      .bind(deckId)
-      .run();
-    if (linked_flashcard_deck_id) {
-      await env.DB.prepare(
-        "INSERT INTO deck_links (challenge_deck_id, flashcard_deck_id) VALUES (?, ?)",
-      )
-        .bind(deckId, linked_flashcard_deck_id)
+    // Only update the deck link when the caller explicitly includes the field.
+    // Omitting linked_flashcard_deck_id (e.g. article-only updates from AI confirm)
+    // leaves the existing link untouched — prevents silently wiping it.
+    if ("linked_flashcard_deck_id" in body) {
+      const { linked_flashcard_deck_id } = body;
+      await env.DB.prepare("DELETE FROM deck_links WHERE challenge_deck_id = ?")
+        .bind(deckId)
         .run();
+      if (linked_flashcard_deck_id) {
+        await env.DB.prepare(
+          "INSERT INTO deck_links (challenge_deck_id, flashcard_deck_id) VALUES (?, ?)",
+        )
+          .bind(deckId, linked_flashcard_deck_id)
+          .run();
+      }
     }
 
     return json({ ok: true }, 200, request);

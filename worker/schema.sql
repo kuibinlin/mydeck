@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS challenge_decks (
   title TEXT NOT NULL,
   category TEXT NOT NULL,
   description TEXT,
+  article TEXT,
   created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT (datetime('now'))
 );

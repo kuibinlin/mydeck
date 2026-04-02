@@ -8,6 +8,44 @@ import QuizQuestion from './QuizQuestion'
 import ResultsCard from './ResultsCard'
 import { getDeck, submitScore } from './challengeApi'
 
+// ─── ArticlePanel ─────────────────────────────────────────────────────────────
+// Collapsible reference article shown during a comprehension challenge.
+// Collapsed by default so it doesn't distract; player expands when needed.
+function ArticlePanel({ article }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div className="bg-surface rounded-card shadow-card mb-4 overflow-hidden">
+      <button
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-text cursor-pointer bg-transparent border-0 text-left"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+      >
+        <span>
+          <i className="fas fa-file-lines text-primary mr-2" />
+          Reference article
+          <span className="ml-2 text-xs font-normal text-muted">
+            — some questions are based on this text
+          </span>
+        </span>
+        <i className={`fas fa-chevron-down text-muted transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 border-t border-border">
+          <div
+            className="mt-3 text-sm text-text leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto pr-1"
+            style={{ scrollbarWidth: 'thin' }}
+          >
+            {article}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── ChallengePlay ────────────────────────────────────────────────────────────
 export default function ChallengePlay() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -105,7 +143,7 @@ export default function ChallengePlay() {
         <>
           <ProgressBar pct={pct} label={progressLabel} />
 
-          {/* Study hint shown on first question */}
+          {/* Study hint — shown on first question only */}
           {index === 0 && linkedFcDecks.length > 0 && (
             <div className="bg-surface rounded-card shadow-card p-4 mb-4 text-sm text-muted">
               <i className="fas fa-lightbulb text-warning" /> Study first?{' '}
@@ -120,6 +158,9 @@ export default function ChallengePlay() {
               ))}
             </div>
           )}
+
+          {/* Reference article — shown throughout when the deck has one */}
+          {deck?.article && <ArticlePanel article={deck.article} />}
 
           {cards[index] && (
             <QuizQuestion

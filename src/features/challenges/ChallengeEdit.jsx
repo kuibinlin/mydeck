@@ -36,6 +36,8 @@ export default function ChallengeEdit() {
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState(DEFAULT_CATEGORY);
   const [description, setDescription] = useState("");
+  const [article, setArticle] = useState("");         // reference article saved when comprehension questions are confirmed
+  const [articlePanelOpen, setArticlePanelOpen] = useState(false);
   const [linkedFcId, setLinkedFcId] = useState("");
   const [fcDecks, setFcDecks] = useState([]);
   const [cards, setCards] = useState([]);
@@ -71,6 +73,7 @@ export default function ChallengeEdit() {
         setTitle(data.deck.title);
         setCategory(data.deck.category);
         setDescription(data.deck.description || "");
+        setArticle(data.deck.article || "");
         if (data.linked_flashcard_decks?.length > 0) {
           setLinkedFcId(String(data.linked_flashcard_decks[0].id));
         }
@@ -102,6 +105,7 @@ export default function ChallengeEdit() {
           title,
           category,
           description,
+          article,                             // preserve any saved article
           linked_flashcard_deck_id: linkedFcId || null,
         });
         setMsg({ type: "success", text: "Deck updated!" });
@@ -250,6 +254,17 @@ export default function ChallengeEdit() {
         text: `Added ${added}/${kept.length} questions. Error: ${err.message}`,
       });
     }
+    // If this was a comprehension generation, persist the article so it is
+    // available to players as a reference during the challenge.
+    if (aiMode === "comprehension" && aiArticle.trim()) {
+      try {
+        await updateDeck(deckId, { article: aiArticle });
+        setArticle(aiArticle);
+      } catch {
+        // non-fatal — questions were already added; article can be saved on next deck update
+      }
+    }
+
     refreshCards();
     setAiPreview(null);
     setAiArticle("");
@@ -336,6 +351,50 @@ export default function ChallengeEdit() {
           ))}
         </Select>
 
+        {/* Reference article panel — only shown when an article has been saved */}
+        {article && (
+          <div className="mb-4 border border-border rounded-card overflow-hidden">
+            <button
+              type="button"
+              className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-sm font-semibold text-text bg-transparent border-0 cursor-pointer text-left hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
+              onClick={() => setArticlePanelOpen(o => !o)}
+              aria-expanded={articlePanelOpen}
+            >
+              <span>
+                <i className="fas fa-file-lines text-primary mr-2" />
+                Reference article
+              </span>
+              <i className={`fas fa-chevron-down text-muted transition-transform duration-200 ${articlePanelOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {articlePanelOpen && (
+              <div className="px-4 pb-4 pt-1 border-t border-border">
+                <p className="text-xs text-muted mb-2">
+                  Shown to players as a collapsible reference during the challenge. Edits are saved when you click <strong>{isEdit ? 'Update' : 'Confirm'}</strong>.
+                </p>
+                <textarea
+                  value={article}
+                  onChange={(e) => setArticle(e.target.value)}
+                  rows={8}
+                  maxLength={10000}
+                  className="w-full"
+                  placeholder="Reference article text…"
+                />
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-xs text-muted">{article.length}/10,000</span>
+                  <button
+                    type="button"
+                    className="text-xs text-error font-semibold bg-transparent border-0 cursor-pointer hover:opacity-70 transition-opacity"
+                    onClick={() => { setArticle(""); setArticlePanelOpen(false); }}
+                  >
+                    <i className="fas fa-trash mr-1" />Remove article
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-3">
           <Button onClick={handleSaveDeck} disabled={saving}>
             {isEdit ? (
@@ -355,32 +414,43 @@ export default function ChallengeEdit() {
         </div>
       </div>
 
-      {/* Question editor */}
-      {deckSaved && (
-        <>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-            <h2 className="text-xl font-bold">Questions</h2>
-            <div className="grid grid-cols-2 sm:flex gap-2">
-              <Button
-                size="sm"
-                onClick={() => {
-                  setEditingCard(null);
-                  setShowQuestionForm(true);
-                }}
-              >
-                <i className="fas fa-plus" /> Add Question
-              </Button>
-              <Button
-                variant="ai"
-                size="sm"
-                onClick={() => setShowAIPanel(!showAIPanel)}
-              >
-                <i className="fas fa-wand-magic-sparkles" /> AI Generate
-              </Button>
-              <CsvImport onImport={handleCsvImport} />
-            </div>
+      {/* Questions section — header always visible so users see the full page shape.
+           Action buttons and content are gated behind deckSaved (deck must exist
+           in the DB before questions can be associated with it). */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <h2 className="text-xl font-bold">Questions</h2>
+        {deckSaved && (
+          <div className="grid grid-cols-2 sm:flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditingCard(null);
+                setShowQuestionForm(true);
+              }}
+            >
+              <i className="fas fa-plus" /> Add Question
+            </Button>
+            <Button
+              variant="ai"
+              size="sm"
+              onClick={() => setShowAIPanel(!showAIPanel)}
+            >
+              <i className="fas fa-wand-magic-sparkles" /> AI Generate
+            </Button>
+            <CsvImport onImport={handleCsvImport} />
           </div>
+        )}
+      </div>
 
+      {!deckSaved ? (
+        <div className="rounded-card border border-primary/25 bg-primary/8 py-12 px-6 text-center">
+          <i className="fas fa-circle-info text-4xl max-md:text-3xl mb-4 block text-primary" />
+          <p className="text-base max-md:text-sm font-semibold text-primary">
+            Save the deck details above to start adding questions.
+          </p>
+        </div>
+      ) : (
+        <>
           {showAIPanel && (
             <div className="bg-surface rounded-card shadow-card p-5 mb-4 border border-purple-300 dark:border-purple-800">
               <h3 className="text-base font-semibold mb-2">

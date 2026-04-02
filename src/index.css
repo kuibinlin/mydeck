@@ -21,6 +21,7 @@
   /* Semantic — light defaults, overridden for dark below */
   --color-bg: #f5f5f7;
   --color-surface: #ffffff;
+  --color-surface-alt: #ebebed;   /* subtle inset background — e.g. unselected choices */
   --color-text: #1d1d1f;
   --color-muted: #86868b;
   --color-border: #d2d2d7;
@@ -54,6 +55,7 @@
 [data-theme="dark"] {
   --color-bg: #1c1c24;
   --color-surface: #26263a;
+  --color-surface-alt: #2e2e42;   /* slightly lighter than surface */
   --color-text: #f5f5f7;
   --color-muted: #98989d;
   --color-border: #38383a;
@@ -101,6 +103,23 @@ select:focus {
 textarea {
   resize: vertical;
   min-height: 80px;
+}
+
+/* ─── Select arrow ───────────────────────────────────────────────────────────
+   Replace the native browser arrow (which sits flush against the edge) with a
+   custom SVG chevron that has proper padding clearance.
+   Two versions: one per theme so the arrow colour matches the text contrast. */
+select {
+  padding-right: 2.5rem;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236e6e73' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem;
+  cursor: pointer;
+}
+[data-theme="dark"] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23aeaeb2' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
 }
 
 /* ─── Number input steppers ──────────────────────────────────────────────────
