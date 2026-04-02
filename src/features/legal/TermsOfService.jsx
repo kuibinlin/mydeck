@@ -1,16 +1,17 @@
 // Terms of Service — governs use of MyDeck.
-// Last updated: March 2026
+// Last updated: 2 April 2026
 // To update content, edit this file directly.
 
 export default function TermsOfService() {
   return (
-    <div className="max-w-2xl mx-auto px-6 py-12 pb-16">
-      <p className="text-xs text-muted mb-2">Last updated: March 2026</p>
+    <div className="max-w-4xl mx-auto px-6 py-12 pb-16">
+      <p className="text-xs text-muted mb-2">Last updated: 2 April 2026</p>
       <h1 className="text-3xl font-extrabold tracking-tight mb-4 text-text">Terms of Service</h1>
       <p className="text-sm text-muted leading-relaxed mb-8 pb-8 border-b border-border">
-        These Terms of Service (&ldquo;Terms&rdquo;) govern your use of MyDeck, operated by
-        Kuibin Lin (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;). By accessing or using MyDeck, you agree
-        to be bound by these Terms. If you do not agree, please do not use the service.
+        MyDeck is a personal demo project — free to use like a normal web app, but built
+        primarily to demonstrate a flashcard and quiz platform. These Terms govern your use
+        of MyDeck. By accessing or using MyDeck, you agree to these Terms. If you do not
+        agree, please do not use the service.
       </p>
 
       <section className="mb-8">
@@ -27,8 +28,7 @@ export default function TermsOfService() {
         <p className="text-sm text-muted leading-relaxed mb-2">
           You retain ownership of the flashcard decks, challenge questions, and other
           content you create on MyDeck. By creating content, you grant us a non-exclusive,
-          royalty-free licence to store, display, and serve that content to you and
-          other users of the platform.
+          royalty-free licence to store, display, and serve that content within the platform.
         </p>
         <p className="text-sm text-muted leading-relaxed mb-2">
           You are solely responsible for ensuring your content does not:
@@ -58,28 +58,32 @@ export default function TermsOfService() {
       <section className="mb-8">
         <h2 className="text-base font-bold mb-2.5 text-text">4. Leaderboards and public scores</h2>
         <p className="text-sm text-muted leading-relaxed mb-2">
-          Quiz scores you submit are stored and may be displayed publicly on challenge
-          leaderboards alongside your chosen username. By submitting a score, you
-          consent to this public display. If you wish to have your scores removed,
-          contact us at the address in our Privacy Policy.
+          Quiz scores you submit may be displayed publicly on challenge leaderboards alongside
+          your chosen username. By submitting a score, you consent to this public display.
+          If you wish to have your scores removed, contact us at the address below.
         </p>
       </section>
 
       <section className="mb-8">
-        <h2 className="text-base font-bold mb-2.5 text-text">5. Account termination</h2>
+        <h2 className="text-base font-bold mb-2.5 text-text">5. Service availability and data</h2>
+        <p className="text-sm text-muted leading-relaxed mb-2">
+          MyDeck is provided on a best-effort basis with no uptime guarantees. As a personal
+          demo project, the service may be modified, suspended, or shut down at any time.
+          In the event of a shutdown, all data will be permanently erased. We will make a
+          reasonable effort to announce this in advance, but cannot guarantee prior notice.
+        </p>
+        <p className="text-sm text-muted leading-relaxed mb-2">
+          You are responsible for keeping your own copies of any content you create here.
+          Do not rely on MyDeck as your sole storage for important data.
+        </p>
+      </section>
+
+      <section className="mb-8">
+        <h2 className="text-base font-bold mb-2.5 text-text">6. Account termination</h2>
         <p className="text-sm text-muted leading-relaxed mb-2">
           You may stop using MyDeck at any time. We reserve the right to suspend or
           terminate accounts that violate these Terms. Upon termination, your right
           to use the service ceases immediately.
-        </p>
-      </section>
-
-      <section className="mb-8">
-        <h2 className="text-base font-bold mb-2.5 text-text">6. Service availability</h2>
-        <p className="text-sm text-muted leading-relaxed mb-2">
-          We provide MyDeck on a best-effort basis. We do not guarantee continuous,
-          uninterrupted, or error-free access to the service. We may modify, suspend,
-          or discontinue any part of the service at any time without notice.
         </p>
       </section>
 
@@ -96,10 +100,9 @@ export default function TermsOfService() {
       <section className="mb-8">
         <h2 className="text-base font-bold mb-2.5 text-text">8. Limitation of liability</h2>
         <p className="text-sm text-muted leading-relaxed mb-2">
-          To the fullest extent permitted by Singapore law, we shall not be liable for
+          To the fullest extent permitted by applicable law, we shall not be liable for
           any indirect, incidental, special, consequential, or punitive damages, or any
-          loss of data, revenue, or profits, arising out of or in connection with your
-          use of MyDeck.
+          loss of data, arising out of or in connection with your use of MyDeck.
         </p>
       </section>
 
@@ -113,16 +116,7 @@ export default function TermsOfService() {
       </section>
 
       <section className="mb-8">
-        <h2 className="text-base font-bold mb-2.5 text-text">10. Governing law</h2>
-        <p className="text-sm text-muted leading-relaxed mb-2">
-          These Terms are governed by and construed in accordance with the laws of
-          Singapore. Any disputes arising under these Terms shall be subject to the
-          exclusive jurisdiction of the courts of Singapore.
-        </p>
-      </section>
-
-      <section className="mb-8">
-        <h2 className="text-base font-bold mb-2.5 text-text">11. Contact</h2>
+        <h2 className="text-base font-bold mb-2.5 text-text">10. Contact</h2>
         <p className="text-sm text-muted leading-relaxed mb-2">
           For questions about these Terms, please contact us at:{' '}
           <a href="mailto:contact@linsnotes.com" className="text-primary no-underline hover:underline">
