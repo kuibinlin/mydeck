@@ -3,6 +3,7 @@
 import {
   validateFlashcards,
   validateChallengeCards,
+  shuffleChoices,
   checkRateLimit,
   logUsage,
   callAI,
@@ -1247,7 +1248,7 @@ Example output for 1 question:
 
   const questions = await callAI(messages, validateChallengeCards, env);
   await logUsage(user, "generate-vocab", env);
-  return json({ questions }, 200, request);
+  return json({ questions: shuffleChoices(questions) }, 200, request);
 }
 
 async function handleGenerateComprehension(request, env) {
@@ -1298,7 +1299,7 @@ Example output for 1 question:
 
   const questions = await callAI(messages, validateChallengeCards, env);
   await logUsage(user, "generate-comprehension", env);
-  return json({ questions }, 200, request);
+  return json({ questions: shuffleChoices(questions) }, 200, request);
 }
 
 // === Router ===

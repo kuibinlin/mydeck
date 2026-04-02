@@ -67,6 +67,31 @@ export function validateChallengeCards(data) {
   );
 }
 
+// Shuffle the choices of each question and update the answer index to follow.
+// LLMs consistently place the correct answer first (index 0 = choice A),
+// regardless of the examples given in the prompt. Shuffling here — once,
+// on the server, before storage — fixes the bias for all callers without
+// any changes needed in the frontend or the DB schema.
+//
+// How it works:
+//   order = [0,1,2,3]  →  shuffle in place  →  e.g. [2,0,3,1]
+//   new choices = order.map(i => original[i])   (picks originals in new order)
+//   new answer  = order.indexOf(original answer) (finds where correct ended up)
+export function shuffleChoices(questions) {
+  return questions.map((q) => {
+    const order = [0, 1, 2, 3];
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    return {
+      ...q,
+      choices: order.map((i) => q.choices[i]),
+      answer: order.indexOf(q.answer),
+    };
+  });
+}
+
 // === Rate Limiting ===
 
 export async function checkRateLimit(user, env) {
