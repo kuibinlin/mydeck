@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// seed-flashcards.mjs — Bulk-import flashcard decks from a CSV file into D1.
+// flashcards-csv-to-db.mjs — Bulk-import flashcard decks from a CSV file into D1.
 //
 // Usage (run from worker/ directory):
-//   node seed-flashcards.mjs --file=../data/your-file.csv --email=you@example.com
+//   node flashcards-csv-to-db.mjs --file=../data/your-file.csv --email=you@example.com
 //
 // CSV must have columns (in any order):
 //   title, category, description, front, meaning, note
