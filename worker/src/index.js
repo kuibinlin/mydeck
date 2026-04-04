@@ -359,28 +359,22 @@ async function handleGitHubCallback(request, env) {
       .first();
   }
 
-  // Create session
-  const sessionToken = generateToken();
+  // Create a short-lived handoff code for the frontend to exchange via /auth/verify.
+  // Avoids relying on cookies set during cross-origin redirects, which are blocked
+  // by Safari ITP on iOS (all iOS browsers use WebKit and share this restriction).
+  // The frontend's existing #verify= handler calls /auth/verify, which creates the
+  // session and sets the cookie in a direct fetch response — the correct context.
+  const handoffCode = generateToken();
   await env.SESSIONS.put(
-    sessionToken,
-    JSON.stringify({
-      id: user.id,
-      email,
-      username: user.username,
-    }),
-    {
-      expirationTtl: 2592000, // 30 days
-    },
+    `magic:${handoffCode}`,
+    JSON.stringify({ email }),
+    { expirationTtl: 120 }, // 2 min, one-time use
   );
 
-  // Set the session cookie on the redirect response.
-  // The browser stores it before following the redirect to /login,
-  // where AuthContext calls /auth/me to hydrate the user.
   return new Response(null, {
     status: 302,
     headers: {
-      Location: `${env.FRONTEND_URL.replace(/\/$/, "")}/login`,
-      "Set-Cookie": sessionCookie(sessionToken),
+      Location: `${env.FRONTEND_URL.replace(/\/$/, "")}/login#verify=${handoffCode}`,
     },
   });
 }
