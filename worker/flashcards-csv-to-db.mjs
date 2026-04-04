@@ -67,8 +67,10 @@ const esc = s => s.replace(/'/g, "''")
 // Normalize blank strings to null.
 const nullable = s => (s && s.trim()) ? s.trim() : null
 
-// Run a SELECT via wrangler and return the results array.
-function d1Query(sql) {
+// Run a query via wrangler and return the first result object (meta + results).
+// NOTE: wrangler v4 no longer returns actual row data in results[]; only execution stats.
+// Use meta.rows_read > 0 to check if rows were found.
+function d1Execute(sql) {
   const tmp = `.tmp-query-${Date.now()}.sql`
   writeFileSync(tmp, sql, 'utf8')
   try {
@@ -76,10 +78,9 @@ function d1Query(sql) {
       `npx wrangler d1 execute linsnotes-db --remote --json --file=${tmp}`,
       { encoding: 'utf8' }
     )
-    // Extract JSON array from output (wrangler may print progress lines before it).
     const match = raw.match(/\[[\s\S]*\]/)
     if (!match) throw new Error(`Unexpected wrangler output:\n${raw}`)
-    return JSON.parse(match[0])[0].results
+    return JSON.parse(match[0])[0]
   } finally {
     unlinkSync(tmp)
   }
@@ -88,14 +89,17 @@ function d1Query(sql) {
 // ─── Step 1: resolve user ────────────────────────────────────────────────────
 
 console.log(`Looking up user: ${args.email}`)
-const userRows = d1Query(`SELECT id FROM users WHERE email = '${esc(args.email)}'`)
+const userCheck = d1Execute(`SELECT id FROM users WHERE email = '${esc(args.email)}'`)
 
-if (!userRows || userRows.length === 0) {
+if ((userCheck?.meta?.rows_read ?? 0) === 0) {
   console.error(`Error: no user found with email "${args.email}"`)
   process.exit(1)
 }
-const userId = userRows[0].id
-console.log(`Found user id: ${userId}`)
+
+// wrangler v4 no longer returns row data in --json output, so we use an inline
+// subquery instead of a literal ID in every SQL statement.
+const userIdExpr = `(SELECT id FROM users WHERE email = '${esc(args.email)}')`
+console.log(`Found user: ${args.email}`)
 
 // ─── Step 2: parse CSV ───────────────────────────────────────────────────────
 
@@ -147,10 +151,10 @@ for (const deck of deckMap.values()) {
   // Insert deck only if it doesn't already exist for this user.
   parts.push(`
 INSERT INTO flashcard_decks (title, category, description, created_by)
-SELECT '${esc(deck.title)}', '${esc(deck.category)}', ${descVal}, ${userId}
+SELECT '${esc(deck.title)}', '${esc(deck.category)}', ${descVal}, ${userIdExpr}
 WHERE NOT EXISTS (
   SELECT 1 FROM flashcard_decks
-  WHERE title = '${esc(deck.title)}' AND created_by = ${userId}
+  WHERE title = '${esc(deck.title)}' AND created_by = ${userIdExpr}
 );`)
 
   for (const card of deck.cards) {
@@ -164,7 +168,7 @@ WHERE NOT EXISTS (
 INSERT INTO flashcards (deck_id, front, meaning, note)
 SELECT d.id, '${esc(card.front)}', '${esc(card.meaning)}', ${noteVal}
 FROM flashcard_decks d
-WHERE d.title = '${esc(deck.title)}' AND d.created_by = ${userId}
+WHERE d.title = '${esc(deck.title)}' AND d.created_by = ${userIdExpr}
 AND NOT EXISTS (
   SELECT 1 FROM flashcards f
   WHERE f.deck_id = d.id
@@ -181,8 +185,8 @@ AND NOT EXISTS (
 // If anything fails, D1 rolls back — no partial inserts.
 // The script is idempotent so just re-run on failure.
 
-const sql = ['BEGIN;', ...parts, 'COMMIT;'].join('\n')
-const sqlFile = `seed-flashcards-${Date.now()}.sql`
+const sql = parts.join('\n')
+const sqlFile = `sql-flashcards-${Date.now()}.sql`
 writeFileSync(sqlFile, sql, 'utf8')
 console.log(`Generated ${parts.length} SQL statement(s)`)
 

@@ -36,3 +36,7 @@ notes/
 
 # data files
 data/
+
+# generated sql seed files
+sql-flashcards-*.sql
+sql-challenges-*.sql
