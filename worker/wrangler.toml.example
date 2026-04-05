@@ -14,6 +14,7 @@
 #   [[kv_namespaces]] — Binds env.SESSIONS → KV store (sessions, magic links)
 #   [observability]  — Enables request logging in the Cloudflare dashboard
 #   [vars]           — Non-secret env vars (FRONTEND_URL, FROM_EMAIL)
+#   [[routes]]       — Custom domain routing (optional, requires your domain on Cloudflare)
 # ─────────────────────────────────────────────────────────────────────────────
 
 ### Worker name — must match the name in your Cloudflare dashboard.
@@ -80,6 +81,12 @@ AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
     # "@cf/qwen/qwq-32b"
     # "@cf/meta/llama-4-scout-17b-16e-instruct"
 
+
+### Custom domain — routes your API subdomain to this worker.
+### Requires your domain to be on Cloudflare.
+# [[routes]]
+# pattern = "mydeckapi.yourdomain.com/*"
+# zone_name = "yourdomain.com"
 
 # Workers AI binding — gives the worker access to env.AI for LLM inference.
 # Model selection happens at runtime in code, not here.

@@ -168,9 +168,17 @@ Published mydeck-api (0.5 sec)
 Save this URL — you'll use it for:
 
 - GitHub OAuth callback URL (step 3)
-- Frontend `VITE_API_URL` (step 7)
+- Frontend `VITE_API_URL` (step 7) — unless you set up a custom domain (recommended for production, see below)
 
 > The worker won't fully work yet (no secrets set), but deploying now creates the URL and enables the Workers AI binding.
+
+### Custom domain (recommended for production)
+
+Assign a subdomain like `mydeckapi.yourdomain.com` to your Worker so the API and frontend share the same eTLD+1. This fixes iOS Safari ITP blocking session cookies on cross-site `workers.dev` domains.
+
+1. In the Cloudflare dashboard → **Workers & Pages** → your worker → **Settings** → **Domains & Routes** → **Add** → **Custom Domain**
+2. Enter `mydeckapi.yourdomain.com` (your domain must be on Cloudflare)
+3. Use this custom domain as your `VITE_API_URL` and GitHub OAuth callback URL instead of the `workers.dev` URL
 
 ---
 
@@ -185,8 +193,8 @@ You need **two** OAuth apps — one for production, one for local dev (different
 3. Fill in:
    - **Application name:** MyDeck (or anything you like)
    - **Homepage URL:** your frontend URL (e.g. `https://yourdomain.com`)
-   - **Authorization callback URL:** `https://your-worker.workers.dev/auth/github/callback`
-     > Replace `your-worker` with your worker URL from step 2. For example: `https://mydeck-api.yourname.workers.dev/auth/github/callback`.
+   - **Authorization callback URL:** `https://mydeckapi.yourdomain.com/auth/github/callback`
+     > Use your custom domain if configured (recommended). Otherwise use your `workers.dev` URL: `https://mydeck-api.yourname.workers.dev/auth/github/callback`.
 4. Click **Register application**
 5. On the next page, click **Generate a new client secret**
 6. Save both the **Client ID** and **Client Secret** — you will need them in step 5
@@ -297,8 +305,10 @@ cp .env.example .env
 Edit `.env`:
 
 ```
-VITE_API_URL=https://your-worker.workers.dev
+VITE_API_URL=https://mydeckapi.yourdomain.com
 ```
+
+> If you haven't set up a custom domain, use your `workers.dev` URL instead: `https://mydeck-api.yourname.workers.dev`
 
 ---
 

@@ -66,17 +66,17 @@ function escapeHtml(str) {
 }
 
 // === Cookie Helpers ===
-// SameSite=None is required because the frontend (linsnotes.com) and API
-// (linsnotes-api.kuibin.workers.dev) are on different domains — every API
-// call is cross-site. Browsers require Secure whenever SameSite=None is set.
+// SameSite=Lax is safe because the frontend (linsnotes.com / mydeck.linsnotes.com)
+// and API (mydeckapi.linsnotes.com) share the same eTLD+1 (linsnotes.com) — same-site.
+// This fixes iOS Safari ITP which blocked SameSite=None cookies from cross-site workers.dev domains.
 //
 // To clear the cookie, call sessionCookie(null) — sets Max-Age=0.
 function sessionCookie(token) {
   const ONE_YEAR = 60 * 60 * 24 * 365;
   if (!token) {
-    return "session=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0";
+    return "session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0";
   }
-  return `session=${token}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${ONE_YEAR}`;
+  return `session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${ONE_YEAR}`;
 }
 
 // Extracts the session token from the Cookie request header.
