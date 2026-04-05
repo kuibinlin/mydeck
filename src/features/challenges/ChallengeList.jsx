@@ -51,22 +51,24 @@ export default function ChallengeList() {
     <div>
       <BackButton onClick={() => navigate('/dashboard')} />
 
-      <div className="flex items-center gap-3 mb-6 flex-wrap">
+      <div className="flex items-center gap-3 mb-6 max-md:flex-col max-md:items-stretch">
         <h2 className="text-xl font-bold">Challenge Decks</h2>
-        <button
-          className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-btn transition-all cursor-pointer border ${showMine ? 'bg-success text-white border-success hover:opacity-90' : 'bg-transparent text-primary border-primary hover:bg-primary hover:text-white'}`}
-          onClick={() => setShowMine(m => !m)}
-        >
-          <i className={`fas ${showMine ? 'fa-globe' : 'fa-user'}`} />
-          {showMine ? 'All Decks' : 'My Decks'}
-        </button>
-        <div className="flex-1" />
-        <button
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs bg-primary hover:bg-primary-hover text-white font-semibold rounded-btn transition-all cursor-pointer border border-transparent"
-          onClick={() => navigate('/challenges/new')}
-        >
-          <i className="fas fa-plus" /> Create Challenge
-        </button>
+        <div className="flex items-center gap-3 flex-1">
+          <button
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-btn transition-all cursor-pointer border ${showMine ? 'bg-success text-white border-success hover:opacity-90' : 'bg-transparent text-primary border-primary hover:bg-primary hover:text-white'}`}
+            onClick={() => setShowMine(m => !m)}
+          >
+            <i className={`fas ${showMine ? 'fa-globe' : 'fa-user'}`} />
+            {showMine ? 'All Decks' : 'My Decks'}
+          </button>
+          <div className="flex-1" />
+          <button
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs bg-primary hover:bg-primary-hover text-white font-semibold rounded-btn transition-all cursor-pointer border border-transparent"
+            onClick={() => navigate('/challenges/new')}
+          >
+            <i className="fas fa-plus" /> Create Challenge
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-2 mb-4 flex-wrap">
