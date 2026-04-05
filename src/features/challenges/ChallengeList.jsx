@@ -124,12 +124,12 @@ export default function ChallengeList() {
                 </div>
               </div>
 
-              <div className="mt-auto pt-3 flex items-center gap-3 text-xs text-muted">
+              <div className="mt-auto pt-3 flex items-center gap-3 text-xs text-muted max-md:flex-col max-md:items-start">
                 <span className="flex-1 flex gap-3 min-w-0">
                   <span className="shrink-0"><i className="fas fa-folder" style={{ marginRight: 3 }} />{d.category}</span>
                   <span className="shrink-0"><i className="fas fa-user" style={{ marginRight: 3 }} />{d.author || 'Unknown'}</span>
                 </span>
-                <div className="flex gap-2 shrink-0">
+                <div className="flex gap-2 shrink-0 max-md:w-full max-md:justify-end">
                   {d.current_version && (
                     <button
                       className="inline-flex items-center gap-1.5 px-3 py-1 text-xs bg-transparent text-primary border border-primary hover:bg-primary hover:text-white font-semibold rounded-btn transition-all cursor-pointer"

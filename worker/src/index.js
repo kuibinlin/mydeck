@@ -9,6 +9,7 @@ import {
   callAI,
 } from "./ai.js";
 
+// ← UPDATE THESE to your frontend domains before deploying 
 const PROD_ORIGINS = [
   "https://linsnotes.com",
   "https://mydeck.linsnotes.com",
