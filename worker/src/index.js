@@ -19,12 +19,13 @@ const PROD_ORIGINS = [
 // Access-Control-Allow-Credentials is required for cross-origin cookie-based auth.
 // The origin must be explicit (not '*') when credentials are included.
 // localhost origins are only allowed when running via wrangler dev (worker URL is localhost).
+// Any localhost port is accepted in dev, not just 5173 — Vite falls back to 5174, 5175, ...
+// when the preferred port is taken, and a hardcoded port turns that into an opaque CORS error.
+const DEV_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1):\d+$/;
+
 function corsHeaders(request) {
   const workerHost = new URL(request.url).hostname;
   const isDev = workerHost === "localhost" || workerHost === "127.0.0.1";
-  const allowedOrigins = isDev
-    ? [...PROD_ORIGINS, "http://localhost:5173", "http://127.0.0.1:5173"]
-    : PROD_ORIGINS;
   const origin = request.headers.get("Origin") || "";
   const headers = {
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -34,7 +35,8 @@ function corsHeaders(request) {
   };
   // Only reflect allowed origins — unknown origins get no ACAO header,
   // which causes browsers to block the cross-origin request.
-  if (allowedOrigins.includes(origin)) {
+  // In production isDev is false, so only PROD_ORIGINS are ever reflected.
+  if (PROD_ORIGINS.includes(origin) || (isDev && DEV_ORIGIN.test(origin))) {
     headers["Access-Control-Allow-Origin"] = origin;
   }
   return headers;

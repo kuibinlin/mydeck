@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --local-upstream 127.0.0.1",
     "deploy": "wrangler deploy",
     "db:init": "wrangler d1 execute linsnotes-db --file=schema.sql",
     "db:init:local": "wrangler d1 execute linsnotes-db --local --file=schema.sql"

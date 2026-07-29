@@ -341,30 +341,45 @@ VITE_API_URL=http://localhost:8787
 
 ```bash
 cd worker
-npx wrangler d1 execute mydeck-db --local --file=schema.sql
+npm run db:init:local
 ```
 
 ### Run both servers
 
-Open two terminals:
-
-**Terminal 1 — Worker (API):**
-
-```bash
-cd worker && npm run dev
-```
-
-Runs on `http://localhost:8787`
-
-**Terminal 2 — Frontend:**
+From the project root, one command starts both:
 
 ```bash
 npm run dev
 ```
 
-Runs on `http://localhost:5173`
+| | | |
+|---|---|---|
+| `[api]` | Worker | `http://localhost:8787` |
+| `[web]` | Frontend | `http://localhost:5173` |
 
-Open `http://localhost:5173` in your browser.
+Open `http://localhost:5173` in your browser. Ctrl-C stops both (`concurrently -k`).
+
+To run just one:
+
+```bash
+npm run dev:api    # worker only
+npm run dev:web    # frontend only
+```
+
+> **Why `--local-upstream 127.0.0.1` is in the worker's dev script:** because
+> `wrangler.toml` declares a `[[routes]]` pattern, `wrangler dev` otherwise makes
+> the worker see requests as `http://mydeckapi.linsnotes.com/...`. The CORS check
+> in `src/index.js` keys off that hostname to decide it's dev, so it would refuse
+> to send `Access-Control-Allow-Origin` for `http://localhost:5173` and every API
+> call from the local frontend would fail in the browser. Overriding the upstream
+> host restores the localhost hostname. (Don't use `--local-upstream localhost` —
+> wrangler's dev proxy rewrites the upstream host in outgoing headers and mangles
+> the CORS header into `http://localhost:8787:8787:5173`.)
+>
+> Same rewriting is why you must browse to **`localhost:5173`, not `127.0.0.1:5173`** —
+> an origin containing `127.0.0.1` comes back mangled to `http://localhost:8787:5173`
+> and the browser rejects it. `localhost` is what `FRONTEND_URL` and the GitHub OAuth
+> callback use anyway.
 
 ---
 
@@ -398,7 +413,9 @@ npx wrangler pages deploy dist/
 ### Frontend (project root)
 
 ```bash
-npm run dev       # Start dev server (Vite HMR) on localhost:5173
+npm run dev       # Start BOTH worker (8787) and frontend (5173)
+npm run dev:web   # Frontend only (Vite HMR) on localhost:5173
+npm run dev:api   # Worker only on localhost:8787
 npm run build     # Production build → dist/
 npm run preview   # Preview production build locally
 npm run lint      # Run ESLint
