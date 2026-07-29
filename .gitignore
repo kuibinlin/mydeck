@@ -25,7 +25,7 @@ dist-ssr
 
 # env files
 .env
-.env.local
+.env*.local
 
 # claude
 CLAUDE.md

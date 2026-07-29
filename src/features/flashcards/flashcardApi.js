@@ -30,6 +30,9 @@ export const updateCard = (cardId, data) =>
     body: JSON.stringify(data),
   })
 
+export const publish = (id) =>
+  api(`/api/flashcard-decks/${id}/publish`, { method: 'POST' })
+
 export const deleteDeck = (id) =>
   api(`/api/flashcard-decks/${id}`, { method: 'DELETE' })
 

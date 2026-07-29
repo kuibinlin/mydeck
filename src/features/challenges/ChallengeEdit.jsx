@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router";
+import { useAuth } from "@/context/AuthContext";
 import Spinner from "@/components/ui/Spinner";
+import EmptyState from "@/components/ui/EmptyState";
 import Modal from "@/components/ui/Modal";
 import BackButton from "@/components/ui/BackButton";
 import Button from "@/components/ui/Button";
@@ -8,7 +10,12 @@ import Alert from "@/components/ui/Alert";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import PreviewModal from "@/components/ui/PreviewModal";
-import { CATEGORIES, DEFAULT_CATEGORY, MAX_CARDS_PER_DECK } from "@/lib/constants";
+import {
+  CATEGORIES,
+  DEFAULT_CATEGORY,
+  MAX_CARDS_PER_DECK,
+  MIN_ITEMS_TO_PUBLISH,
+} from "@/lib/constants";
 import {
   getDecks as getFcDecks,
   getDeck as getFcDeck,
@@ -30,6 +37,7 @@ import {
 export default function ChallengeEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const isEdit = Boolean(id);
 
   const [deckId, setDeckId] = useState(id || null);
@@ -50,6 +58,7 @@ export default function ChallengeEdit() {
   const [isPublished, setIsPublished] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [pendingDeleteCardId, setPendingDeleteCardId] = useState(null);
+  const [denied, setDenied] = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [aiMode, setAiMode] = useState("vocab-deck");
@@ -70,6 +79,12 @@ export default function ChallengeEdit() {
     if (!isEdit) return;
     getDeck(id)
       .then((data) => {
+        // See FlashcardEdit: the route is reachable by URL even though the list
+        // hides Edit from non-owners, and every write would 403.
+        if (data.deck.created_by !== user.id && !user.isAdmin) {
+          setDenied(true);
+          return;
+        }
         setTitle(data.deck.title);
         setCategory(data.deck.category);
         setDescription(data.deck.description || "");
@@ -85,7 +100,7 @@ export default function ChallengeEdit() {
         navigate("/challenges");
       })
       .finally(() => setLoading(false));
-  }, [id, isEdit, navigate]);
+  }, [id, isEdit, navigate, user.id, user.isAdmin]);
 
   const refreshCards = () =>
     getDeck(deckId)
@@ -299,6 +314,22 @@ export default function ChallengeEdit() {
   };
 
   if (loading) return <Spinner center />;
+
+  if (denied) {
+    return (
+      <div>
+        <BackButton onClick={() => navigate("/challenges")} />
+        <EmptyState
+          icon="fas fa-lock"
+          message={"This challenge belongs to someone else.\nYou can play it, but only its owner can make changes."}
+          action={{
+            label: "Play challenge",
+            onClick: () => navigate(`/challenges/${id}`),
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -721,15 +752,27 @@ export default function ChallengeEdit() {
             );
           })}
 
-          {cards.length > 0 && (
-            <Button
-              variant="success"
-              className="w-full mt-4"
-              onClick={() => setShowPublishModal(true)}
-            >
-              <i className="fas fa-rocket" /> Publish Version
-            </Button>
-          )}
+          {/* Publish affordance — deliberately the same shape as the one in
+              FlashcardEdit so the two flows read identically. The only honest
+              difference is that a published challenge needs a re-publish for
+              edits to reach players, because leaderboard scores are pinned to
+              a version snapshot. */}
+          <Button
+            variant="success"
+            className="w-full mt-4"
+            disabled={cards.length < MIN_ITEMS_TO_PUBLISH}
+            onClick={() => setShowPublishModal(true)}
+          >
+            <i className="fas fa-rocket" />{" "}
+            {isPublished ? "Publish update" : "Publish"}
+          </Button>
+          <p className="text-xs text-muted text-center mt-2">
+            {cards.length < MIN_ITEMS_TO_PUBLISH
+              ? `Add ${MIN_ITEMS_TO_PUBLISH - cards.length} more question${MIN_ITEMS_TO_PUBLISH - cards.length === 1 ? "" : "s"} to publish. Only you can see this challenge until then.`
+              : isPublished
+                ? "Published — everyone can see this challenge. Edits reach players when you publish an update."
+                : "Only you can see this challenge until you publish it."}
+          </p>
         </>
       )}
       <Modal
@@ -743,8 +786,12 @@ export default function ChallengeEdit() {
       />
       <Modal
         open={showPublishModal}
-        title="Publish new version?"
-        message="This creates a new leaderboard. Previous scores will remain on their version."
+        title={isPublished ? "Publish an update?" : "Publish this challenge?"}
+        message={
+          isPublished
+            ? "This creates a new version and a new leaderboard. Scores already earned stay on their own version."
+            : "Everyone will be able to see and play this challenge."
+        }
         confirmLabel="Publish"
         confirmVariant="primary"
         onConfirm={() => {

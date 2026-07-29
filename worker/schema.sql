@@ -9,14 +9,22 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- Flash Card Decks
+--
+-- is_published mirrors what a row in challenge_versions means for a challenge
+-- deck: until it is set, only the owner sees the deck. Flashcards need no
+-- versions table because they carry no scores — see migrations/0001.
 CREATE TABLE IF NOT EXISTS flashcard_decks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   category TEXT NOT NULL,
   description TEXT,
+  is_published INTEGER NOT NULL DEFAULT 0,
   created_by INTEGER REFERENCES users(id),
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_flashcard_decks_published
+  ON flashcard_decks(is_published);
 
 -- Flash Cards
 CREATE TABLE IF NOT EXISTS flashcards (

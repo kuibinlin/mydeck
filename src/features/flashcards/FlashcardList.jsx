@@ -108,7 +108,13 @@ export default function FlashcardList() {
                     <p className="text-muted text-sm line-clamp-2">{d.description}</p>
                   )}
                 </div>
-                <div className="shrink-0"><Badge>{d.card_count} cards</Badge></div>
+                {/* Mirrors ChallengeList: a draft is visible only to its owner,
+                    so the badge explains why nobody else sees this deck. */}
+                <div className="shrink-0">
+                  {d.is_published
+                    ? <Badge>{d.card_count} cards</Badge>
+                    : <Badge outline>Draft</Badge>}
+                </div>
               </div>
 
               <div className="mt-auto pt-3 flex items-center gap-3 text-xs text-muted">
