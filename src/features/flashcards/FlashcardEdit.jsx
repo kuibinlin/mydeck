@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router";
+import { useAuth } from "@/context/AuthContext";
 import Spinner from "@/components/ui/Spinner";
+import EmptyState from "@/components/ui/EmptyState";
 import Modal from "@/components/ui/Modal";
 import BackButton from "@/components/ui/BackButton";
 import Button from "@/components/ui/Button";
@@ -9,7 +11,12 @@ import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import Textarea from "@/components/ui/Textarea";
 import PreviewModal from "@/components/ui/PreviewModal";
-import { CATEGORIES, DEFAULT_CATEGORY, MAX_CARDS_PER_DECK } from "@/lib/constants";
+import {
+  CATEGORIES,
+  DEFAULT_CATEGORY,
+  MAX_CARDS_PER_DECK,
+  MIN_ITEMS_TO_PUBLISH,
+} from "@/lib/constants";
 import { generateFlashcards } from "@/lib/aiApi";
 import FlashcardCardForm from "./FlashcardCardForm";
 import CsvImport from "./CsvImport";
@@ -21,11 +28,13 @@ import {
   addCard,
   updateCard,
   deleteCard,
+  publish,
 } from "./flashcardApi";
 
 export default function FlashcardEdit() {
   const { id } = useParams(); // undefined when creating
   const navigate = useNavigate();
+  const { user } = useAuth();
   const isEdit = Boolean(id);
 
   const [deckId, setDeckId] = useState(id || null);
@@ -39,8 +48,11 @@ export default function FlashcardEdit() {
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [deckSaved, setDeckSaved] = useState(isEdit);
+  const [isPublished, setIsPublished] = useState(false);
+  const [showPublishModal, setShowPublishModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [pendingDeleteCardId, setPendingDeleteCardId] = useState(null);
+  const [denied, setDenied] = useState(false);
   const [showAIPanel, setShowAIPanel] = useState(false);
   const [aiArticle, setAiArticle] = useState("");
   const [aiCount, setAiCount] = useState(5);
@@ -56,17 +68,27 @@ export default function FlashcardEdit() {
     if (!isEdit) return;
     getDeck(id)
       .then((data) => {
+        // The deck list only offers Edit to owners and admins, but the route is
+        // reachable by typing the URL. The worker rejects every write with 403
+        // either way; without this check the page would render a populated form
+        // and a Delete button that can only ever fail, which reads as broken
+        // rather than forbidden.
+        if (data.deck.created_by !== user.id && !user.isAdmin) {
+          setDenied(true);
+          return;
+        }
         setTitle(data.deck.title);
         setCategory(data.deck.category);
         setDescription(data.deck.description || "");
         setCards(data.cards);
+        setIsPublished(!!data.deck.is_published);
       })
       .catch((err) => {
         setMsg({ type: "error", text: err.message });
         navigate("/flashcards");
       })
       .finally(() => setLoading(false));
-  }, [id, isEdit, navigate]);
+  }, [id, isEdit, navigate, user.id, user.isAdmin]);
 
   const refreshCards = () =>
     getDeck(deckId)
@@ -125,6 +147,16 @@ export default function FlashcardEdit() {
     } catch (err) {
       setMsg({ type: "error", text: err.message });
       setPendingDeleteCardId(null);
+    }
+  };
+
+  const handlePublish = async () => {
+    try {
+      await publish(deckId);
+      setIsPublished(true);
+      setMsg({ type: "success", text: "Published! Everyone can see this deck now." });
+    } catch (err) {
+      setMsg({ type: "error", text: err.message });
     }
   };
 
@@ -224,6 +256,22 @@ export default function FlashcardEdit() {
   };
 
   if (loading) return <Spinner center />;
+
+  if (denied) {
+    return (
+      <div>
+        <BackButton onClick={() => navigate("/flashcards")} />
+        <EmptyState
+          icon="fas fa-lock"
+          message={"This deck belongs to someone else.\nYou can study it, but only its owner can make changes."}
+          action={{
+            label: "View deck",
+            onClick: () => navigate(`/flashcards/${id}`),
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -561,8 +609,41 @@ export default function FlashcardEdit() {
               </div>
             ),
           )}
+
+          {/* Same shape as the publish block in ChallengeEdit — one flow to
+              learn. A published flashcard deck needs no re-publish because it
+              has no version snapshot to refresh; edits are live immediately. */}
+          {!isPublished && (
+            <Button
+              variant="success"
+              className="w-full mt-4"
+              disabled={cards.length < MIN_ITEMS_TO_PUBLISH}
+              onClick={() => setShowPublishModal(true)}
+            >
+              <i className="fas fa-rocket" /> Publish
+            </Button>
+          )}
+          <p className="text-xs text-muted text-center mt-2">
+            {isPublished
+              ? "Published — everyone can see this deck. Edits appear immediately."
+              : cards.length < MIN_ITEMS_TO_PUBLISH
+                ? `Add ${MIN_ITEMS_TO_PUBLISH - cards.length} more card${MIN_ITEMS_TO_PUBLISH - cards.length === 1 ? "" : "s"} to publish. Only you can see this deck until then.`
+                : "Only you can see this deck until you publish it."}
+          </p>
         </>
       )}
+      <Modal
+        open={showPublishModal}
+        title="Publish this deck?"
+        message="Everyone will be able to see and study this deck."
+        confirmLabel="Publish"
+        confirmVariant="primary"
+        onConfirm={() => {
+          setShowPublishModal(false);
+          handlePublish();
+        }}
+        onCancel={() => setShowPublishModal(false)}
+      />
       <Modal
         open={!!pendingDeleteCardId}
         title="Delete card?"
@@ -575,7 +656,11 @@ export default function FlashcardEdit() {
       <Modal
         open={showDeleteModal}
         title="Delete deck?"
-        message="This will permanently delete the deck and all its cards. This cannot be undone."
+        message={
+          isPublished
+            ? "This deck is published. Deleting it will permanently remove it and all its cards for everyone. This cannot be undone."
+            : "This will permanently delete the draft deck and all its cards. This cannot be undone."
+        }
         confirmLabel="Delete"
         confirmVariant="danger"
         onConfirm={handleDeleteDeck}
