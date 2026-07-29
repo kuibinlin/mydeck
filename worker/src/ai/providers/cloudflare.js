@@ -24,7 +24,10 @@ export async function call({ messages, model, tools, env }) {
 //   { response: [...] }                                  some return parsed arrays
 //   { choices: [{ message: { content } }] }              OpenAI-compatible models
 //   { result: { response } }                             occasionally wrapped
-function normalize(result) {
+//
+// Exported for tests: this is pure shape-mapping with no binding, and the
+// tool-call branch is the one place a mistake reaches the user as raw JSON.
+export function normalize(result) {
   const empty = { text: "", toolCalls: [], stopReason: null, usage: null, raw: result };
 
   if (typeof result === "string") return { ...empty, text: result };
@@ -46,11 +49,15 @@ function normalize(result) {
   if (typeof result?.response === "string")
     return { ...empty, text: result.response, usage, toolCalls };
 
+  // An OpenAI-shaped reply. On a tool call `content` is null, so this must not
+  // test for a non-null content before claiming the branch — doing so drops
+  // through to the raw-payload dump below, putting the entire API envelope in
+  // `text` and losing finish_reason. That reaches the user as visible JSON.
   const choice = result?.choices?.[0];
-  if (choice?.message?.content !== undefined && choice?.message?.content !== null)
+  if (choice?.message)
     return {
       ...empty,
-      text: choice.message.content,
+      text: choice.message.content ?? "",
       stopReason: choice.finish_reason ?? null,
       usage,
       toolCalls,

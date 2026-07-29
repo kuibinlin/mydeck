@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { label: "Flashcards", path: "/flashcards", icon: "fa-clone" },
   { label: "Challenges", path: "/challenges", icon: "fa-bolt" },
   { label: "Leaderboard", path: "/leaderboard", icon: "fa-trophy" },
+  { label: "中文", path: "/chinese", icon: "fa-language" },
 ];
 
 export default function Header() {

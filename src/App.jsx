@@ -30,6 +30,9 @@ import LeaderboardOverview from "@/features/leaderboard/LeaderboardOverview";
 // Settings
 import SettingsPage from "@/features/settings/SettingsPage";
 
+// Chinese tutor
+import ChinesePage from "@/features/chinese/ChinesePage";
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -62,6 +65,12 @@ export default function App() {
               <Route path="/leaderboard/:versionId" element={<Leaderboard />} />
 
               <Route path="/settings" element={<SettingsPage />} />
+            </Route>
+
+            {/* The tutor owns the viewport below the header — no footer, its
+                own scroll region — so it needs the bare layout. */}
+            <Route element={<ProtectedRoute bare />}>
+              <Route path="/chinese" element={<ChinesePage />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/" replace />} />

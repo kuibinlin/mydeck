@@ -69,3 +69,20 @@ export function formatDate(dateStr) {
   if (!dateStr) return ''
   return new Date(dateStr).toLocaleDateString()
 }
+
+// A unique id for a list key or a local record.
+//
+// NOT crypto.randomUUID() on its own: that is a secure-context API, so it is
+// undefined over plain http on a LAN address — which is exactly how the app is
+// opened when testing on a phone. `crypto.randomUUID()` there is a TypeError,
+// not a fallback, so the first render that needs an id takes the page down.
+// localhost and https are secure contexts and keep the real thing.
+let counter = 0
+export function uid() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  // Uniqueness within one page is all these ids are ever used for.
+  counter += 1
+  return `id-${Date.now().toString(36)}-${counter}-${Math.random().toString(36).slice(2, 10)}`
+}

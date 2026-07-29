@@ -10,6 +10,7 @@ import * as challenges from "./challenges.js";
 import * as scores from "./scores.js";
 import * as deckLinks from "./deckLinks.js";
 import * as ai from "./ai.js";
+import * as zh from "./zh.js";
 
 export const routes = [
   ["POST", "/auth/login", auth.login],
@@ -51,4 +52,6 @@ export const routes = [
   ["POST", "/api/ai/generate-flashcards", ai.generateFlashcards],
   ["POST", "/api/ai/generate-vocab", ai.generateVocab],
   ["POST", "/api/ai/generate-comprehension", ai.generateComprehension],
+
+  ["POST", "/api/zh/turn", zh.turn],
 ];

@@ -44,6 +44,15 @@ database_id = "xxxxxxxxxxx"
 binding = "SESSIONS"
 id = "xxxxxxxxxxx"
 
+### Optional — HSK vocabulary server, bound worker-to-worker.
+### Only needed for the Chinese tutor tab. `service` is the Worker's name in
+### your Cloudflare account, not its domain. A service binding carries no client
+### IP, so it bypasses the public endpoint's per-IP rate limit.
+### Without it, integrations/hskMcp.js falls back to the public HTTPS endpoint.
+# [[services]]
+# binding = "HSK"
+# service = "hsk-mcp"
+
 ### Enables request logging and tracing in the Cloudflare dashboard.
 [observability]
 enabled = true
@@ -60,7 +69,7 @@ FRONTEND_URL = "https://xxxxxxxx.com"
 FROM_EMAIL = "noreply@sendme.dev"
 ADMIN_EMAILS = "admin@gmail.com"  # comma-separated for multiple admins
 AI_MAX_RETRIES = "3"
-AI_DAILY_LIMIT_FREE = "3"
+AI_DAILY_LIMIT_FREE = "60"   # counted per model call, and one tutor turn can spend 1-4
 MAX_CARDS_PER_DECK = "50"       # max flashcards per deck
 MAX_QUESTIONS_PER_DECK = "50"   # max questions per challenge deck
 
