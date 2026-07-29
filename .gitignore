@@ -37,6 +37,13 @@ notes/
 # data files
 data/
 
+# ...except generated source data that the build depends on. Both are produced
+# by a script and both are bundled: hsk-core.json IS the offline dictionary tier
+# the tutor falls back to, and without it the Worker does not build. A fresh
+# clone must have them.
+!worker/src/services/zh/data/
+!src/features/chinese/data/
+
 # generated sql seed files
 sql-flashcards-*.sql
 sql-challenges-*.sql

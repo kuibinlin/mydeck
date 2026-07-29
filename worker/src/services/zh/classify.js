@@ -1,0 +1,86 @@
+// What did the learner just type? — authoritative copy.
+//
+// Byte-identical logic to src/features/chinese/classify.js, which paints the
+// first frame in the browser. This copy decides server-side and wins any
+// disagreement: the client's job is to be instant, this one's is to be right.
+//
+// The duplication is deliberate. worker/ is a separate package with its own
+// deps and its own deploy, and reaching outside its root to share one file
+// would trade a copy for a build-time coupling. src/features/chinese/classify.test.js
+// imports both and fails if they ever diverge.
+//
+// Pure: no imports, no I/O, ~1ms.
+
+const HAN = /\p{Script=Han}/u;
+const HAN_G = /\p{Script=Han}/gu;
+const KANA = /[぀-ヿ]/u;
+const HANGUL = /[가-힯]/u;
+const LATIN = /[a-zA-Z]/;
+const TONE_MARK = /[āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜ]/i;
+const NUMBERED = /^[a-zü]{1,6}[1-5]$/i;
+const TERMINATOR = /[。！？!?]/gu;
+
+export const KINDS = /** @type {const} */ ([
+  "empty",
+  "single_char",
+  "word",
+  "phrase",
+  "sentence",
+  "paragraph",
+  "pinyin",
+  "english",
+  "mixed",
+  "foreign_cjk",
+]);
+
+/**
+ * @param {string} input
+ * @returns {{
+ *   kind: typeof KINDS[number],
+ *   text: string,
+ *   han: string[],
+ *   hanCount: number,
+ *   terminators: number,
+ *   hasLatin: boolean,
+ * }}
+ */
+export function classify(input) {
+  const text = typeof input === "string" ? input.trim() : "";
+  const han = text.match(HAN_G) ?? [];
+  const terminators = (text.match(TERMINATOR) ?? []).length;
+  const hasLatin = LATIN.test(text);
+
+  const base = { text, han, hanCount: han.length, terminators, hasLatin };
+
+  if (!text) return { ...base, kind: "empty" };
+
+  // Japanese kana or Korean hangul — the only reliable signal that this is not
+  // Chinese.
+  //
+  // Text written purely in kanji cannot be detected here, and no rule can fix
+  // that: 日本語 is three valid Han characters and a Chinese reader parses it
+  // fine. Such input classifies as `word`, gets looked up, misses the HSK list,
+  // and lands on the honest "not in the vocabulary list — here is the stroke
+  // order anyway" path. That is the right outcome, so this is a boundary of the
+  // classifier rather than a gap in it.
+  if (KANA.test(text) || HANGUL.test(text)) return { ...base, kind: "foreign_cjk" };
+
+  if (!HAN.test(text)) {
+    // Pinyin the learner typed rather than pasted: nǐ hǎo, or hao3.
+    const looksPinyin =
+      TONE_MARK.test(text) || text.split(/\s+/).every((t) => NUMBERED.test(t));
+    if (looksPinyin) return { ...base, kind: "pinyin" };
+    if (hasLatin) return { ...base, kind: "english" };
+    return { ...base, kind: "empty" };
+  }
+
+  // Han present. Mixed script gets its own class so the caller can operate on
+  // the Chinese part without pretending the English half was understood.
+  if (hasLatin) return { ...base, kind: "mixed" };
+
+  if (han.length > 80 || terminators > 1) return { ...base, kind: "paragraph" };
+  if (terminators === 1) return { ...base, kind: "sentence" };
+  if (han.length === 1) return { ...base, kind: "single_char" };
+  if (han.length <= 4) return { ...base, kind: "word" };
+  return { ...base, kind: "phrase" };
+}
