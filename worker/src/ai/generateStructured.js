@@ -6,13 +6,22 @@
 // deliberately separate functions built on the same callModel primitive.
 
 import { badGateway } from "../services/errors.js";
-import { callModel, activeProvider } from "./callModel.js";
+import { callModel } from "./callModel.js";
 import { extractJSON } from "./extract.js";
 
 const DEFAULT_RETRIES = 3;
 
 // Reasoning models (Qwen, QwQ) narrate their thinking before answering, which
-// buries the JSON. Cloudflare hosts several, so tell them not to.
+// buries the JSON.
+//
+// Applied to every provider, not just Cloudflare. The gate used to be
+// `provider === "cloudflare"`, which quietly assumed reasoning models only
+// arrive through the binding — but SEA-LION reaches this code through the
+// `openai` provider, and its Qwen-SEA-LION-v4.5 spent 1327 of 1401 completion
+// tokens reasoning on a three-card request (34s) against 74 tokens and 2.7s for
+// the same request without it. The preamble costs one sentence of prompt on a
+// model that has nothing to suppress, so there is no reason to guess which
+// models need it from the provider name.
 const NO_REASONING =
   "IMPORTANT: Do NOT explain your reasoning. Do NOT output any thinking process. Output ONLY the raw JSON array immediately.\n\n";
 
@@ -29,10 +38,7 @@ export async function generateStructured(
   { expect = "array", model = null } = {},
 ) {
   const maxRetries = parseInt(env.AI_MAX_RETRIES, 10) || DEFAULT_RETRIES;
-  const prepared =
-    activeProvider(env) === "cloudflare"
-      ? withNoReasoningPreamble(messages)
-      : messages;
+  const prepared = withNoReasoningPreamble(messages);
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
