@@ -11,6 +11,7 @@ import EmptyState from "./EmptyState";
 import AnswerBlock from "./AnswerBlock";
 import { floorPlan } from "./floorPlan";
 import { sendTurn, sendActivityResult } from "./chineseApi";
+import Modal from "@/components/ui/Modal";
 import { uid } from "@/lib/utils";
 
 const LEVEL_KEY = "md_hsk_level";
@@ -18,6 +19,7 @@ const LEVEL_KEY = "md_hsk_level";
 export default function ChinesePage() {
   const [turns, setTurns] = useState([]);
   const [draft, setDraft] = useState("");
+  const [confirmClear, setConfirmClear] = useState(false);
   const [level, setLevel] = useState(() => {
     const saved = Number(localStorage.getItem(LEVEL_KEY));
     return saved >= 1 && saved <= 6 ? saved : 3;
@@ -102,6 +104,20 @@ export default function ChinesePage() {
       .catch((err) => settle({ error: err?.message || "unavailable" }));
   }, []);
 
+  // Nothing to unwind. The transcript is React state and nothing else: the
+  // worker keeps no conversation — every turn is built from one system message
+  // and the learner's line — so there is no thread to end and no server call to
+  // make. The level survives; it is a setting, not part of the conversation.
+  //
+  // A request already in flight still resolves, and its `settle` looks for a
+  // turn id that is no longer in the list, so it lands as a no-op. Aborting
+  // would not save quota either — the worker has already been paid for by then.
+  const clear = useCallback(() => {
+    setTurns([]);
+    setConfirmClear(false);
+    inputRef.current?.focus();
+  }, []);
+
   const onKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -150,6 +166,20 @@ export default function ChinesePage() {
 
       <div className="border-t border-border bg-bg">
         <div className="max-w-3xl mx-auto w-full px-4 py-3 flex items-end gap-2">
+          {/* Docked with the composer rather than pinned above the transcript,
+              which is the one place that is always reachable — a long
+              conversation would otherwise put it a scroll away. Absent until
+              there is something to clear. */}
+          {!empty && (
+            <button
+              onClick={() => setConfirmClear(true)}
+              aria-label="Clear chat"
+              title="Clear chat"
+              className="shrink-0 w-10 h-10 rounded-btn border border-border text-muted grid place-items-center transition-colors cursor-pointer hover:text-error hover:border-error"
+            >
+              <i className="fas fa-eraser" />
+            </button>
+          )}
           <textarea
             ref={inputRef}
             rows={1}
@@ -170,6 +200,20 @@ export default function ChinesePage() {
           </button>
         </div>
       </div>
+
+      {/* Confirmed, because the transcript is the only copy. Nothing here is
+          written down anywhere, so a mistaken tap is not recoverable — and the
+          message says what is kept, since "clear" next to a tab that saves
+          decks is a fair thing to be nervous about. */}
+      <Modal
+        open={confirmClear}
+        title="Clear this conversation?"
+        message="The answers on screen are removed. Your level and any decks you saved are kept."
+        confirmLabel="Clear"
+        confirmVariant="danger"
+        onConfirm={clear}
+        onCancel={() => setConfirmClear(false)}
+      />
     </div>
   );
 }

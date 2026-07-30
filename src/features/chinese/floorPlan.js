@@ -30,15 +30,41 @@ function requestedCount(text) {
   return n >= 1 && n <= 30 ? n : null;
 }
 
+// A chip is a next step the learner can take without composing a sentence.
+//
+// `label` is Chinese and `hint` is the English gloss — see Chip.jsx for why
+// both. `send` stays English on purpose: it is the prompt, and the tutor
+// answers in the language it is asked in. Someone pressing 造句 wants the
+// example sentence in Chinese and the explanation of it in theirs.
+//
+// The labels say what the learner gets, not what the tab does internally. An
+// earlier "hard words only" read as a filter toggle — something that would trim
+// the answer already on screen — when it was only ever another question. It is
+// gone; the words worth learning are already what a sentence lookup leads with
+// (`hardestIn` in the worker ranks them, unprompted).
 const CHIPS = {
-  strokes: (w) => ({ label: `✎ write ${w}`, send: `show me how to write ${w}` }),
-  level: (w) => ({ label: "HSK level", send: `what HSK level is ${w}` }),
-  deck: (w) => ({ label: "+ add to a deck", send: `add ${w} to a deck` }),
-  examples: (w) => ({ label: "in a sentence", send: `use ${w} in a sentence` }),
-  hardWords: { label: "hard words only", send: "which words here are above my level?" },
-  translate: { label: "translate it", send: "translate that for me" },
-  startWords: { label: "HSK 1 words", send: "give me 10 HSK 1 words" },
-  check: { label: "check my level", send: "check my level" },
+  strokes: (w) => ({
+    label: "✎ 写一写",
+    hint: "write it",
+    send: `show me how to write ${w}`,
+  }),
+  deck: (w) => ({
+    label: "+ 加入卡组",
+    hint: "add to a deck",
+    // "save", not "add". The worker only offers the save tool when the message
+    // reads as intent to keep something (SAVE_INTENT in services/tutor.js), and
+    // "add 谢 to a deck" matches none of it — so this chip promised a write that
+    // the model was never handed the means to perform.
+    send: `save ${w} to a deck`,
+  }),
+  examples: (w) => ({
+    label: "造句",
+    hint: "in a sentence",
+    send: `show me how to use ${w} in a sentence`,
+  }),
+  translate: { label: "翻译", hint: "translate it", send: "translate that for me" },
+  startWords: { label: "HSK 1 生词", hint: "words to start", send: "give me 10 HSK 1 words" },
+  check: { label: "我的水平", hint: "check my level", send: "check my level" },
 };
 
 /** @returns {Floor} */
@@ -54,7 +80,10 @@ export function floorPlan(input) {
         skeleton: "card",
         skeletonRows: 1,
         status: `Looking up ${word}…`,
-        chips: [CHIPS.strokes(word), CHIPS.level(word), CHIPS.deck(word)],
+        // Same three as `word`. There used to be an "HSK level" chip here, which
+        // asked the tutor for the one fact the card underneath already prints on
+        // a badge; 造句 is the thing the card cannot show.
+        chips: [CHIPS.strokes(word), CHIPS.examples(word), CHIPS.deck(word)],
         needsServer: true,
       };
 
@@ -77,7 +106,7 @@ export function floorPlan(input) {
         skeleton: "list",
         skeletonRows: Math.min(6, c.hanCount),
         status: "Reading it…",
-        chips: [CHIPS.hardWords, CHIPS.translate],
+        chips: [CHIPS.translate],
         needsServer: true,
       };
 
@@ -90,10 +119,18 @@ export function floorPlan(input) {
         skeleton: "list",
         skeletonRows: 8,
         status: "Picking out the words worth learning…",
-        chips: [CHIPS.hardWords, CHIPS.translate],
+        chips: [CHIPS.translate],
         needsServer: true,
       };
 
+    // English wrapped around some Chinese — which is what every chip in this
+    // file produces, so this is the class a learner lands in most: "show me how
+    // to write 字" classifies here, not as `single_char`.
+    //
+    // No chips. The learner asked for one specific thing and is about to get a
+    // stroke sheet or an example sentence; whatever is offered here is offered
+    // *next to* that, and the word-level actions belong on the card, where they
+    // know which word they mean.
     case "mixed":
       return {
         kind: c.kind,
@@ -101,7 +138,7 @@ export function floorPlan(input) {
         skeleton: "card",
         skeletonRows: 1,
         status: "Reading the Chinese part…",
-        chips: [CHIPS.hardWords],
+        chips: [],
         needsServer: true,
       };
 
@@ -160,4 +197,4 @@ export function floorPlan(input) {
   }
 }
 
-export { requestedCount };
+export { requestedCount, CHIPS };

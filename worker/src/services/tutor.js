@@ -71,7 +71,11 @@ const SAVE_INTENT =
   /\b(save|saving|keep|store|remember|memoris|memoriz|bookmark|add (?:it|them|these|those|this)\b)/i;
 const SAVE_INTENT_ZH = /收藏|保存|记住|存起来|加入/;
 
-const wantsToSave = (message) => {
+// Exported for the parity test in src/features/chinese/floorPlan.test.js: the
+// chips are the only way most turns get sent, so a chip promising a save whose
+// wording this predicate reads as "no" is a dead button. Pure function of a
+// string — exporting it costs nothing.
+export const wantsToSave = (message) => {
   const text = typeof message === "string" ? message : "";
   return SAVE_INTENT.test(text) || SAVE_INTENT_ZH.test(text);
 };

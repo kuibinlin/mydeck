@@ -8,6 +8,7 @@
 // isn't in the HSK list" is the honest result, and it still carries the
 // character so the learner can practise writing it.
 import Badge from "@/components/ui/Badge";
+import Chip from "./Chip";
 
 export default function WordCard({ card, onAsk }) {
   const { word, pinyin, meaning, level, found, traditional, radical, classifiers, frequencyRank } =
@@ -48,21 +49,25 @@ export default function WordCard({ card, onAsk }) {
         </p>
       )}
 
+      {/* Same words as the chip row, because they are the same two actions —
+          what differs is that these know which word they belong to. AnswerBlock
+          only passes `onAsk` when there is more than one card on screen; for a
+          single-word answer the chip row underneath already says this, and
+          saying it twice a centimetre apart reads as two different things. */}
       {onAsk && (
-        <div className="flex flex-wrap gap-2 pt-1">
-          <button
+        <div className="flex flex-wrap items-start gap-x-5 gap-y-2 pt-1">
+          <Chip
+            variant="quiet"
+            label="✎ 写一写"
+            hint="write it"
             onClick={() => onAsk(`show me how to write ${word}`)}
-            className="text-sm text-primary font-semibold cursor-pointer bg-transparent border-0 p-0 hover:opacity-80"
-          >
-            ✎ write it
-          </button>
-          <span className="text-border">·</span>
-          <button
-            onClick={() => onAsk(`use ${word} in a sentence`)}
-            className="text-sm text-primary font-semibold cursor-pointer bg-transparent border-0 p-0 hover:opacity-80"
-          >
-            in a sentence
-          </button>
+          />
+          <Chip
+            variant="quiet"
+            label="造句"
+            hint="in a sentence"
+            onClick={() => onAsk(`show me how to use ${word} in a sentence`)}
+          />
         </div>
       )}
     </div>

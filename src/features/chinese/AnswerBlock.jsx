@@ -8,6 +8,7 @@
 // Until the turn endpoint exists (phase 3) the skeleton is where it stops —
 // which is exactly what this looks like at t=16ms in production.
 import CharacterBox from "./CharacterBox";
+import Chip from "./Chip";
 import WordCard from "./WordCard";
 import ActivityCard from "./ActivityCard";
 import SavedDeckCard from "./SavedDeckCard";
@@ -110,7 +111,14 @@ export default function AnswerBlock({ question, floor, result, error, onChip, on
         {cards.length > 0 && (
           <div className="flex flex-col gap-2.5">
             {cards.map((card, i) => (
-              <WordCard key={`${card.word}-${i}`} card={card} onAsk={onChip} />
+              <WordCard
+                key={`${card.word}-${i}`}
+                card={card}
+                // Withheld for a single card: the chip row below is already
+                // about that word and offers the same two actions plus a third.
+                // In a list they are the only per-word actions there are.
+                onAsk={cards.length > 1 ? onChip : undefined}
+              />
             ))}
           </div>
         )}
@@ -187,16 +195,20 @@ export default function AnswerBlock({ question, floor, result, error, onChip, on
           </p>
         )}
 
+        {/* Painted on the submitting frame and never removed. Chips that
+            vanished once the card arrived would move everything under them,
+            which is the one thing this block is built not to do — so where they
+            would duplicate the card's own actions, it is the card that stays
+            quiet (see the `onAsk` gate above). */}
         {floor.chips.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {floor.chips.map((chip) => (
-              <button
-                key={chip.label}
+              <Chip
+                key={chip.send}
+                label={chip.label}
+                hint={chip.hint}
                 onClick={() => onChip(chip.send)}
-                className="rounded-btn border border-border bg-surface px-3 py-1.5 text-sm text-text transition-colors cursor-pointer hover:border-primary hover:text-primary"
-              >
-                {chip.label}
-              </button>
+              />
             ))}
           </div>
         )}
