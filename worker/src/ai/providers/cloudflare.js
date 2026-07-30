@@ -1,6 +1,7 @@
 // Cloudflare Workers AI, via the env.AI binding — no API key, no egress.
 
 import { resolveProvider } from "./config.js";
+import { tooManyRequests, badGateway } from "../../services/errors.js";
 
 const MAX_TOKENS = 8192;
 
@@ -8,15 +9,54 @@ export async function call({ messages, model, tools, env }) {
   const config = resolveProvider("cloudflare", env, model);
   console.log("[CF] calling model:", config.model);
 
-  const result = await env.AI.run(config.model, {
-    messages,
-    max_tokens: MAX_TOKENS,
-    ...(tools?.length ? { tools } : {}),
-  });
+  let result;
+  try {
+    result = await env.AI.run(config.model, {
+      messages,
+      max_tokens: MAX_TOKENS,
+      ...(tools?.length ? { tools } : {}),
+    });
+  } catch (err) {
+    throw translate(err, config.model);
+  }
 
   console.log("[CF] raw result:", JSON.stringify(result)?.substring(0, 1000));
 
   return normalize(result);
+}
+
+// The binding throws a plain Error with the code in the message and no `.status`
+// — and status is exactly what the two callers upstream use to decide whether
+// retrying is worth anything. Untranslated, "you have used up your daily free
+// allocation of 10,000 neurons" was retried three times and then reported to the
+// user as "AI returned invalid output after 3 attempts. Please try again.",
+// which blames their article for an account-level ceiling and sends them to
+// retry something that cannot succeed until the allocation resets.
+//
+// Giving these a status makes generateStructured's existing `if (err.status)
+// throw err` do the right thing, so the classification lives in one place.
+//
+// Exported for tests: mapping an upstream string to a user-facing sentence is
+// the kind of thing that rots silently when the upstream wording changes.
+export function translate(err, model) {
+  const text = String(err?.message ?? err);
+
+  // 4006 — the account's Workers AI free allocation for the day.
+  if (/\b4006\b/.test(text) || /daily free allocation|out of neurons/i.test(text)) {
+    return tooManyRequests(
+      "The AI allowance for today is used up. Lookups and your decks still work, " +
+        "and generation is back tomorrow.",
+    );
+  }
+
+  // A model name that does not exist never improves on retry either. Worth its
+  // own message: this is a deployment mistake, not a capacity one.
+  if (/no such model|model not found|invalid model|\b5007\b/i.test(text)) {
+    return badGateway(`The configured AI model (${model}) is not available.`);
+  }
+
+  // Genuinely unknown — leave it status-less so the retry above still applies.
+  return err instanceof Error ? err : new Error(text);
 }
 
 // Workers AI response shape varies by model:

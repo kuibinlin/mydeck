@@ -52,13 +52,34 @@ export async function runAgent(messages, {
     let turn;
     try {
       turn = await callModel(history, { env, tools: offerTools ? tools : [], model });
-    } catch {
+    } catch (err) {
+      // Logged, not swallowed. These catches used to be bare `catch {}`, which
+      // discarded the only description of the failure that existed: the route
+      // reports `unavailable` to the learner by design, so a dead model looked
+      // identical to a model that was merely out of quota, and the actual
+      // reason — wrong model name, no entitlement, expired dev credentials —
+      // was unreachable from anywhere. Everything below still degrades exactly
+      // as before; it just says why first.
+      console.error(
+        `[agent] model call failed (step ${step}, provider ${provider}, model ${model ?? env.AI_MODEL ?? "default"}): ${err?.message ?? err}`,
+      );
+
+      // A status means the provider already classified this and retrying cannot
+      // help — the account's daily allowance is gone, or the model name is
+      // wrong. Rethrown rather than retried, and rethrown *as itself* so the
+      // route can tell the learner "today's allowance is used up" instead of
+      // the generic "the tutor's notes aren't available", which reads as a
+      // glitch and invites a retry that will fail identically. Same rule
+      // generateStructured uses, for the same reason.
+      if (err?.status) throw err;
+
       // One retry: openaiCompat deliberately throws status-less errors for
       // transient upstream faults.
       if (step === 0) {
         try {
           turn = await callModel(history, { env, tools: offerTools ? tools : [], model });
-        } catch {
+        } catch (retryErr) {
+          console.error(`[agent] retry also failed: ${retryErr?.message ?? retryErr}`);
           throw badGateway("The tutor is unavailable right now");
         }
       } else {

@@ -9,11 +9,17 @@
 // became 攴革. A model that never retypes a character cannot corrupt one, and
 // it also removes the single most common tool call from its job.
 //
-// MODEL OVERRIDE. The app-wide default (@cf/aisingapore/gemma-sea-lion-v4-27b-it)
-// rejects any request carrying tools outright — 3030 / 8001, measured. The tutor
-// therefore pins its own model and leaves flashcard generation untouched.
+// MODEL OVERRIDE. The model that writes clean JSON and the model that can hold a
+// tool call are not the same model, on either provider tried. Cloudflare's
+// gemma-sea-lion rejects a request carrying tools outright (3030 / 8001), and
+// SEA-LION's Gemma accepts one and then answers from memory without calling
+// anything — which is the worse failure, because the reply looks fine while
+// every character in it came from the model rather than the dictionary. So the
+// tutor picks its own model (AI_TUTOR_MODEL) and leaves AI_MODEL, which
+// flashcard and quiz generation use, alone.
 
 import { runAgent } from "../ai/agentLoop.js";
+import { activeProvider } from "../ai/callModel.js";
 import * as registry from "../tools/registry.js";
 import { checkRateLimit, logUsage } from "../ai/usage.js";
 import { tooManyRequests } from "./errors.js";
@@ -28,7 +34,28 @@ const ALLOWED_TOOLS = [
   "save_words_to_deck",
 ];
 
-const TUTOR_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+// Per-provider defaults for the tool-capable model, used when AI_TUTOR_MODEL is
+// unset. There is no single default that is right everywhere, because "can hold
+// a tool call" is a per-model property and the provider only narrows it.
+//
+// SEA-LION arrives through the `openai` provider (it is OpenAI-compatible, so
+// AI_BASE_URL points at it), which is why there is no SEA-LION entry here — the
+// key would be "openai" and would then be wrong for actual OpenAI. Deployments
+// on SEA-LION set AI_TUTOR_MODEL explicitly; wrangler.toml does.
+const TUTOR_MODEL_DEFAULTS = {
+  cloudflare: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+};
+
+// Falls through to null rather than to AI_MODEL, deliberately. AI_MODEL is
+// chosen for structured JSON — on both providers tried so far that is a model
+// that will not hold a tool call (Cloudflare's gemma-sea-lion rejects the
+// request outright, 3030/8001; SEA-LION's Gemma accepts it and then answers
+// from memory with no tool call at all, which is worse because it looks like it
+// worked). null lets resolveProvider pick the provider default, and a wrong
+// model is loud where a silently-toolless one is not.
+function tutorModel(env) {
+  return env.AI_TUTOR_MODEL || TUTOR_MODEL_DEFAULTS[activeProvider(env)] || null;
+}
 
 // The save tool is only on the table when the learner asked for it.
 //
@@ -236,33 +263,40 @@ export async function respond(env, { user, message, seed = [], level = null }) {
     });
   };
 
-  const messages = [
-    {
-      role: "system",
-      content: level
-        ? `${SYSTEM}\n\nThe learner is studying at HSK level ${level}. Pitch examples there, and ` +
-          `pass level:${level} when you ask for words without naming them.`
-        : SYSTEM,
-    },
-    { role: "user", content: message },
+  // ONE system message, and it comes first.
+  //
+  // The seed used to be pushed as a second system message *after* the learner's
+  // turn. Cloudflare's llama accepted that; SEA-LION's gateway rejects the whole
+  // request — "System message must be at the beginning.", HTTP 400 — so every
+  // tutor turn failed while lookups kept working, which is a hard failure that
+  // looks like a soft one. Independently of any provider, an instruction placed
+  // after the message it is meant to govern is the weaker position for it.
+  const system = [
+    level
+      ? `${SYSTEM}\n\nThe learner is studying at HSK level ${level}. Pitch examples there, and ` +
+        `pass level:${level} when you ask for words without naming them.`
+      : SYSTEM,
   ];
 
   if (seed.length) {
-    messages.push({
-      role: "system",
-      content:
-        "Already looked up for this message — use these exact characters and facts, and do " +
+    system.push(
+      "Already looked up for this message — use these exact characters and facts, and do " +
         "not call hsk_lookup for them again:\n" +
         JSON.stringify(seed.map(compact)),
-    });
+    );
   }
+
+  const messages = [
+    { role: "system", content: system.join("\n\n") },
+    { role: "user", content: message },
+  ];
 
   let calls = 0;
   const result = await runAgent(messages, {
     env,
     tools: registry.toOpenAI(tools),
     execute,
-    model: TUTOR_MODEL,
+    model: tutorModel(env),
     // One usage row per model call, not per request. A four-step run costs
     // four generations and the learner's balance should say so.
     onStep: () => {
@@ -294,4 +328,4 @@ const compact = (c) => ({
   found: c.found,
 });
 
-export const TUTOR = { ALLOWED_TOOLS, TUTOR_MODEL, wantsToSave };
+export const TUTOR = { ALLOWED_TOOLS, TUTOR_MODEL_DEFAULTS, tutorModel, wantsToSave };

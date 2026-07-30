@@ -248,4 +248,63 @@ describe("the model itself failing", () => {
 
     expect(err.status).toBe(502);
   });
+
+  // The retry above is for transient faults. A status means the provider has
+  // already classified the failure as one retrying cannot fix — a spent daily
+  // allowance, a model name that does not exist. Retrying it wasted a call and,
+  // worse, replaced the specific error with a generic 502, so the route could
+  // only tell the learner "the tutor's notes aren't available" — a sentence that
+  // reads as a glitch and invites another doomed attempt.
+  describe("a failure the provider already classified", () => {
+    const spent = Object.assign(new Error("allowance used up"), { status: 429 });
+
+    it("is not retried", async () => {
+      let n = 0;
+      spy = vi.spyOn(callModelModule, "callModel").mockImplementation(async () => {
+        n++;
+        throw spent;
+      });
+
+      await runAgent([{ role: "user", content: "x" }], {
+        env,
+        tools: [],
+        execute: async () => ({ ok: true, result: {} }),
+      }).catch(() => {});
+
+      expect(n).toBe(1);
+    });
+
+    it("reaches the route unchanged, so the reason survives", async () => {
+      spy = vi.spyOn(callModelModule, "callModel").mockRejectedValue(spent);
+
+      const err = await runAgent([{ role: "user", content: "x" }], {
+        env,
+        tools: [],
+        execute: async () => ({ ok: true, result: {} }),
+      }).catch((e) => e);
+
+      expect(err.status).toBe(429);
+      expect(err.message).toBe("allowance used up");
+    });
+
+    it("still applies on a later step, not just the first", async () => {
+      let n = 0;
+      spy = vi.spyOn(callModelModule, "callModel").mockImplementation(async () => {
+        n++;
+        if (n === 1) return turn("", [call("hsk_lookup", { word: "书" })]);
+        throw spent;
+      });
+
+      const err = await runAgent([{ role: "user", content: "x" }], {
+        env,
+        tools: [{ name: "hsk_lookup" }],
+        execute: async () => ({ ok: true, result: {} }),
+      }).catch((e) => e);
+
+      // Without the status check this broke out of the loop and returned a
+      // partial run, so the learner got an empty answer and no explanation.
+      expect(err.status).toBe(429);
+      expect(n).toBe(2);
+    });
+  });
 });
