@@ -42,7 +42,13 @@ export async function saveWords(env, { user, words, deckId, deck: deckName, reso
   const skipped = [];
 
   for (const word of wanted) {
-    const hit = resolved.get(word) ?? lookupLocal(word);
+    // Whichever source actually carries a meaning, not simply whichever exists.
+    // `resolved.get(word) ?? lookupLocal(word)` falls back only when the entry
+    // is missing — so a dictionary hit whose meanings came back empty won, and
+    // the word was reported unresolvable while the offline index had a gloss
+    // for it the whole time.
+    const enriched = resolved.get(word);
+    const hit = enriched?.meaning ? enriched : lookupLocal(word);
     if (hit?.meaning) found.push({ word, meaning: hit.meaning, pinyin: hit.pinyin ?? "" });
     else skipped.push(word);
   }

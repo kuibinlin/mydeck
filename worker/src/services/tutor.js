@@ -22,6 +22,8 @@ import { runAgent } from "../ai/agentLoop.js";
 import { activeProvider } from "../ai/callModel.js";
 import * as registry from "../tools/registry.js";
 import { checkRateLimit, logUsage } from "../ai/usage.js";
+import { boundContext } from "./zh/conversation.js";
+import { lookupLocal } from "./zh/localIndex.js";
 import { tooManyRequests } from "./errors.js";
 
 // Publishing is absent on purpose: a draft is recoverable, making a deck public
@@ -95,6 +97,9 @@ const SYSTEM = [
   "Never ask a clarifying question. Pick a sensible default and say in a few words what you",
   "picked.",
   "",
+  "Saying a deck was created or updated does not make it so — only calling save_words_to_deck",
+  "writes anything. If you did not call it, offer to save rather than reporting a save.",
+  "",
   "Anything you save goes to a private draft deck only the learner can see. Never say it is",
   "published, shared or public, and never offer to publish it — that is their click to make.",
 ].join("\n");
@@ -106,12 +111,16 @@ const SYSTEM = [
  * conversation as a tool result so the model reads the characters instead of
  * retyping them.
  */
-export async function respond(env, { user, message, seed = [], level = null }) {
+export async function respond(env, { user, message, seed = [], level = null, context = null }) {
   const rate = await checkRateLimit(user, env);
   if (rate.limited)
     throw tooManyRequests(
       `Daily AI limit reached (${rate.used}/${rate.limit}). Word lookups and your decks still work.`,
     );
+
+  // Bounded here rather than at the route, for the same reason the tool
+  // allowlist is enforced here: a second caller must not be able to skip it.
+  const { history, words: priorWords } = boundContext(context);
 
   const offered = wantsToSave(message)
     ? ALLOWED_TOOLS
@@ -121,6 +130,20 @@ export async function respond(env, { user, message, seed = [], level = null }) {
 
   // Words already resolved for this message, keyed for interception below.
   const resolved = new Map(seed.filter((c) => c.found).map((c) => [c.word, c]));
+
+  // Words from earlier turns, re-resolved against the bundled index — the
+  // client says which words came up, the dictionary says what they are. This
+  // turn's seed always wins, because the live server may have enriched it
+  // beyond what the offline copy knows. A word that does not resolve is simply
+  // not carried; there is nothing useful to do with characters we cannot read.
+  const priorKnown = [];
+  for (const word of priorWords) {
+    if (resolved.has(word)) continue;
+    const hit = lookupLocal(word);
+    if (!hit?.meaning) continue;
+    resolved.set(word, hit);
+    priorKnown.push(word);
+  }
 
   // Activities are the one tool result the client needs in full — everything
   // else is context for the model. Captured as they run rather than dug out of
@@ -154,6 +177,10 @@ export async function respond(env, { user, message, seed = [], level = null }) {
     for (const card of seed) if (card.found) push(card.word);
     for (const activity of activities) for (const item of activity.items) push(item.word);
     for (const word of fromTools) push(word);
+    // Earlier turns last, because order is priority: saveWords keeps the first
+    // MAX_SAVE and drops the rest, so "save that" has to mean the word just
+    // discussed rather than the oldest one still in the conversation.
+    for (const word of priorKnown) push(word);
     return out;
   };
 
@@ -164,6 +191,15 @@ export async function respond(env, { user, message, seed = [], level = null }) {
   };
 
   const execute = (name, args) => {
+    // Counted before the allowlist check rather than after it.
+    //
+    // `saveFailed` is the only thing in the app that can contradict a model
+    // claiming it saved, and it is gated on this counter. Incrementing after
+    // the refusal below made the signal unreachable in precisely the case it
+    // exists for: a model reaching for a tool it was never offered got a
+    // refusal nobody counted, so the learner saw the claim and nothing else.
+    if (name === "save_words_to_deck") saveAttempts++;
+
     // The allowlist has to be enforced here, not just handed to the model.
     //
     // `registry.select()` only decides what is ADVERTISED. `registry.execute()`
@@ -214,15 +250,23 @@ export async function respond(env, { user, message, seed = [], level = null }) {
     // produced 疒館, then 疒馆; asked for food words, 飯物. Not one character
     // survived the round trip.
     //
-    // So the save tool does not read characters from the model at all when it
-    // does not have to. Omitting `words` means "the words we have been talking
-    // about", which is what the learner meant anyway, and those characters come
-    // from the index and the learner's own keyboard. A word the model does name
-    // still has to match something real, or it is dropped downstream.
+    // So the save tool never reads characters from the model. `knownWords()` is
+    // the only source: what the learner typed, what an activity was built from,
+    // what a lookup returned, then what earlier turns carried — all of it from
+    // the index or their own keyboard.
+    //
+    // Naming `words` therefore SELECTS from that list rather than supplying it.
+    // Trusting the names verbatim was the bug: a single corrupted character
+    // meant every word failed to resolve and the save threw, so asking to save
+    // 书 saved nothing at all. A name matching nothing real is a typo by
+    // definition, and falling back to the whole list is the better answer — it
+    // is the same private draft either way, and saving one word too many beats
+    // saving none. Naming nothing still means "what we have been discussing".
     if (name === "save_words_to_deck") {
-      saveAttempts++;
+      const known = knownWords();
       const asked = Array.isArray(filled?.words) ? filled.words : [];
-      if (!asked.length) filled = { ...filled, words: knownWords() };
+      const chosen = asked.map((w) => String(w ?? "").trim()).filter((w) => known.includes(w));
+      filled = { ...filled, words: chosen.length ? chosen : known };
     }
 
     return registry.execute(name, env, { user, resolved }, filled).then((outcome) => {
@@ -290,8 +334,22 @@ export async function respond(env, { user, message, seed = [], level = null }) {
     );
   }
 
+  // The loop's repeat-call guard is per-run, so it cannot see that an activity
+  // named in an earlier turn was already built. Said here instead.
+  if (history.length) {
+    system.push(
+      "The turns above are context. Whatever they mention is already on the learner's screen — " +
+        "answer what was just asked, and do not rebuild an activity or re-save words because " +
+        "they appear earlier in the conversation.",
+    );
+  }
+
+  // History sits between the system message and the current one: the system
+  // message stays first (see above), and the learner's actual question stays
+  // last, which is where every model weights hardest.
   const messages = [
     { role: "system", content: system.join("\n\n") },
+    ...history,
     { role: "user", content: message },
   ];
 

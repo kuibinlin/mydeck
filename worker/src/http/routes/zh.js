@@ -26,7 +26,7 @@ const MAX_MESSAGE_CHARS = 4000;
 export async function turn(request, env) {
   const user = await requireUser(request, env);
 
-  const { message: rawMessage, activityResult, level } = await readBody(request, {});
+  const { message: rawMessage, activityResult, level, context } = await readBody(request, {});
 
   // Bounded before anything reads it. Unbounded, one POST drives an O(4n) scan
   // in wordsIn() and then goes into a model prompt — a megabyte of text is a
@@ -44,7 +44,10 @@ export async function turn(request, env) {
   // agent as a message would, because reacting to a score is the same job as
   // answering a question — and routing it separately would duplicate the quota,
   // the loop and the response shape for no gain.
-  if (activityResult) return respondToResult(request, env, user, activityResult, hskLevel);
+  // Passed through unbounded on purpose — tutor.respond bounds it, so every
+  // caller gets the same limits rather than the ones this route remembered.
+  if (activityResult)
+    return respondToResult(request, env, user, activityResult, hskLevel, context);
 
   const classification = classify(message);
 
@@ -71,7 +74,7 @@ export async function turn(request, env) {
   // reply is the same shape either way and the learner loses only the prose.
   let agent = null;
   try {
-    agent = await tutor.respond(env, { user, message, seed: cards, level: hskLevel });
+    agent = await tutor.respond(env, { user, message, seed: cards, level: hskLevel, context });
   } catch (err) {
     console.warn(`[zh] tutor unavailable: ${err?.message ?? err}`);
     agent = { text: "", unavailable: true, reason: err?.status === 429 ? "quota" : "error" };
@@ -100,7 +103,7 @@ export async function turn(request, env) {
  * whatever the request claims. See services/activities.js#summariseResult for
  * why that clamp is the load-bearing part.
  */
-async function respondToResult(request, env, user, payload, level) {
+async function respondToResult(request, env, user, payload, level, context) {
   const { activity, ...data } = payload ?? {};
   const summary = summariseResult(activity, data);
 
@@ -111,6 +114,7 @@ async function respondToResult(request, env, user, payload, level) {
       message: summary.text,
       seed: [],
       level,
+      context,
     });
   } catch (err) {
     console.warn(`[zh] tutor unavailable after activity: ${err?.message ?? err}`);
@@ -125,6 +129,10 @@ async function respondToResult(request, env, user, payload, level) {
       // trusting its own copy of them — these are the clamped ones.
       score: summary.score,
       misses: summary.misses,
+      // The line the model was actually given. An activity turn has no typed
+      // question, so without this the client has no `q` to replay and the
+      // exchange would go back as a reply to nothing.
+      prompt: summary.text,
       agent,
       dataset: meta.datasetVersion,
     },

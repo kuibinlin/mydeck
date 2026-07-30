@@ -56,6 +56,9 @@ export default function AnswerBlock({ question, floor, result, error, onChip, on
   const activities = result?.agent?.activities ?? [];
   const saves = result?.agent?.saves ?? [];
   const reply = result?.agent?.text;
+  // A word from this turn that the dictionary actually knows — the only kind a
+  // retry can save, since the save reads the words the message resolved.
+  const savable = cards.find((c) => c.found)?.word;
   return (
     // aria-busy so the live region above says "loading" rather than announcing
     // a half-built answer as if it were the whole one.
@@ -138,18 +141,29 @@ export default function AnswerBlock({ question, floor, result, error, onChip, on
         {/* The reply is not evidence of a write. Measured: told twice that the
             save had failed, the model still said "I've added it to your deck."
             The server reports what actually landed, and when nothing did, that
-            is said here rather than left to the prose. */}
+            is said here rather than left to the prose.
+
+            The retry has to name a word. "save that to a deck" is all Latin, so
+            it resolves no characters, so the save has nothing to work with —
+            offering it here sent the learner round the same loop forever. */}
         {result?.agent?.saveFailed && (
           <p className="text-sm rounded-card border border-border bg-surface-alt px-3.5 py-2.5">
-            Nothing was saved — I couldn&rsquo;t match those characters to real
-            words. Look a word up first, then say{" "}
-            <button
-              onClick={() => onChip("save that to a deck")}
-              className="text-primary font-semibold cursor-pointer bg-transparent border-0 p-0 hover:opacity-80"
-            >
-              save that to a deck
-            </button>
-            .
+            Nothing was saved — I couldn&rsquo;t match those characters to real words.
+            {savable ? (
+              <>
+                {" "}
+                Try{" "}
+                <button
+                  onClick={() => onChip(`save ${savable} to a deck`)}
+                  className="text-primary font-semibold cursor-pointer bg-transparent border-0 p-0 hover:opacity-80"
+                >
+                  save {savable} to a deck
+                </button>
+                .
+              </>
+            ) : (
+              " Look a word up first, then ask to save it."
+            )}
           </p>
         )}
 

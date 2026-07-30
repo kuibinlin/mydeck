@@ -11,6 +11,7 @@ import EmptyState from "./EmptyState";
 import AnswerBlock from "./AnswerBlock";
 import { floorPlan } from "./floorPlan";
 import { sendTurn, sendActivityResult } from "./chineseApi";
+import { buildContext } from "./history";
 import Modal from "@/components/ui/Modal";
 import { uid } from "@/lib/utils";
 
@@ -33,10 +34,20 @@ export default function ChinesePage() {
   // canvas the learner is drawing on — changing the level must not do that.
   const levelRef = useRef(level);
 
+  // The transcript, read the same way and for a sharper version of the same
+  // reason: `send` is memoised with an empty dependency list, so closing over
+  // `turns` would capture the empty first render forever and every turn would
+  // be sent as if it were the first.
+  const turnsRef = useRef(turns);
+
   useEffect(() => {
     levelRef.current = level;
     localStorage.setItem(LEVEL_KEY, String(level));
   }, [level]);
+
+  useEffect(() => {
+    turnsRef.current = turns;
+  }, [turns]);
 
   useEffect(() => {
     if (turns.length) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -62,7 +73,7 @@ export default function ChinesePage() {
     const settle = (patch) =>
       setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 
-    sendTurn(question, levelRef.current)
+    sendTurn(question, levelRef.current, buildContext(turnsRef.current))
       .then((result) => settle({ result }))
       // The floor stays exactly as painted; only the enrichment is lost.
       .catch((err) => settle({ error: err?.message || "unavailable" }));
@@ -99,7 +110,7 @@ export default function ChinesePage() {
     const settle = (patch) =>
       setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 
-    sendActivityResult(activity, outcome, levelRef.current)
+    sendActivityResult(activity, outcome, levelRef.current, buildContext(turnsRef.current))
       .then((result) => settle({ result }))
       .catch((err) => settle({ error: err?.message || "unavailable" }));
   }, []);
