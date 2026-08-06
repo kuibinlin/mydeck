@@ -3,39 +3,44 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
     "dev": "concurrently -k -n api,web -c magenta,cyan \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:api": "npm --prefix worker run dev",
-    "dev:web": "vite",
-    "build": "vite build",
+    "dev:api": "npm --workspace backend run dev",
+    "dev:web": "npm --workspace frontend run dev",
+    "build": "npm --workspace frontend run build",
+    "preview": "npm --workspace frontend run preview",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "check": "npm run lint && npm run test && npm run build",
+    "test": "npm run test:web && npm run test:api",
+    "test:web": "npm --workspace frontend run test",
+    "test:api": "npm --workspace backend run test",
+    "test:agent": "uv run --directory services/agent-service pytest -q",
+    "lint:agent": "uv run --directory services/agent-service ruff check .",
+    "check:agent": "npm run lint:agent && npm run test:agent && npm run typecheck:agent",
+    "typecheck:agent": "uv run --directory services/agent-service mypy app",
+    "dev:agent": "uv run --directory services/agent-service uvicorn app.main:app --reload --port 8080",
+    "deploy:api": "npm --workspace backend run deploy",
+    "db:migrate": "npm --workspace backend run db:migrate",
+    "db:migrate:local": "npm --workspace backend run db:migrate:local"
   },
-  "dependencies": {
-    "canvas-confetti": "^1.9.4",
-    "hanzi-writer": "^3.7.3",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "react-router": "^7.13.2",
-    "tailwindcss": "^4.2.2"
+  "//allowScripts": "npm only honours this at the workspace ROOT — it is ignored (with a warning) if left in backend/package.json, and the worker will not run without workerd's postinstall. Version keys are exact on purpose: a bump has to be re-approved rather than inherited.",
+  "allowScripts": {
+    "workerd@1.20260730.1": true,
+    "workerd@1.20260801.1": true,
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.3": true
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@tailwindcss/vite": "^4.2.2",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
-    "@vitest/coverage-v8": "^4.1.10",
     "concurrently": "^10.0.4",
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
-    "globals": "^17.4.0",
-    "postcss": "^8.5.8",
-    "vite": "^8.0.1",
-    "vitest": "^4.1.10"
+    "globals": "^17.4.0"
   }
 }

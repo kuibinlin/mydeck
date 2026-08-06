@@ -1,0 +1,64 @@
+
+
+[project]
+name = "mydeck-agent"
+version = "0.1.0"
+description = "MyDeck agent service — the 中文 tutor loop, outside the Worker's request ceiling."
+requires-python = ">=3.12"
+
+# The agent stack is declared now, before the loop that uses it, on purpose.
+#
+# The container, the lockfile and the Cloud Run cold start are part of THIS
+# deliverable, and langchain dominates all three — image size, install time and
+# import time. Validating a three-package stub and then swapping in the real
+# stack means re-measuring everything that was just signed off, and cold start
+# is already a known Cloud Run cost (docs/architecture.md §2: 100ms-2s).
+#
+# What is deliberately NOT here: retrieval, embeddings, PDF parsing. Those are
+# intended (§8.3) but nothing is built against them yet.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    # create_agent + init_chat_model. The loop this replaces is ai/agentLoop.js,
+    # and with it tools/repair.js (argument coercion) and ai/toolMessages.js
+    # (per-provider tool-message shapes) — both are library concerns here.
+    "langchain>=1.0",
+    # AI_TUTOR_MODEL reaches SEA-LION through an OpenAI-compatible endpoint, the
+    # same route backend/src/ai/providers/openaiCompat.js takes.
+    "langchain-openai>=0.3",
+    # The HSK dictionary is reached with a plain JSON-RPC POST — see
+    # app/hsk/mcp.py for why, in short: the server is stateless, and an adapter
+    # that hands its tools straight to the model would skip the projection that
+    # keeps a 27 KB reply out of the context budget.
+    "httpx>=0.27",
+    "langfuse>=3.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.7",
+    "mypy>=1.13",
+]
+
+# Nothing imports this project as a library — the container copies `app/` and
+# runs uvicorn against it. Building a wheel would add a step with no consumer.
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
