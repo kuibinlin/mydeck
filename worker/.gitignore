@@ -3,3 +3,16 @@ node_modules/
 wrangler.toml
 .dev.vars
 
+.env
+.env.*
+!.env.example
+
+service-account*.json
+credentials*.json
+*.pem
+*.key
+
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
