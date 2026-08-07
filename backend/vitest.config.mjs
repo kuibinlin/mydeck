@@ -136,6 +136,24 @@ async function agentScenario(scenario, id, request) {
     case "claimed":
       return send({ ...agentOk(id), save_attempts: 2 });
 
+    // Worse, and measured on the first real run: it says it saved, having
+    // called nothing. save_attempts is 0 because there was no attempt.
+    case "boast":
+      return send({
+        ...agentOk(id),
+        message: "I've saved 医院 to your private draft deck.",
+        save_attempts: 0,
+      });
+
+    // The correct behaviour when it cannot save: offer, do not report. Must NOT
+    // be read as a claim.
+    case "offer":
+      return send({
+        ...agentOk(id),
+        message: "I can save 医院 to a deck for you — just say the word.",
+        save_attempts: 0,
+      });
+
     case "wrong_contract":
       return send({ ...agentOk(id), contract_version: "2" });
 

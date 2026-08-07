@@ -276,3 +276,21 @@ async def test_word_refs_are_repaired_not_rejected(
         [calls("save_words_to_deck", {"word_refs": sent}), says("Saved.")],
     )
     assert response.intended_actions[0].word_refs == expected
+
+
+async def test_an_unbuildable_provider_is_a_turn_not_a_crash(make_request, agent_config):
+    """No key, unknown model name — the endpoint must still answer.
+
+    A 500 from /internal/agent/turn is something the Worker can only report as
+    "the tutor is unavailable"; a turn that says model_error is something it can
+    fall back from and something a log can explain.
+    """
+    from dataclasses import replace
+
+    from app.agent.run import run_turn
+
+    broken = replace(agent_config, provider="openai", model="", api_key=None, base_url="::::")
+    response = await run_turn(make_request(), config=broken)
+
+    assert response.stopped_by == "model_error"
+    assert response.message == ""

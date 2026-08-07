@@ -58,8 +58,8 @@ sql-challenges-*.sql
 crash.log
 crash.*.log
 
-# tfvars can hold project ids, billing accounts and credentials — commit the
-# .example instead.
+# tfvars contain environment-specific values and may contain sensitive data.
+# Commit example files instead.
 *.tfvars
 *.auto.tfvars
 !*.tfvars.example

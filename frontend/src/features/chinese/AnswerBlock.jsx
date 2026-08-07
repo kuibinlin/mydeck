@@ -138,17 +138,23 @@ export default function AnswerBlock({ question, floor, result, error, onChip, on
           <SavedDeckCard key={save.deckId} save={save} />
         ))}
 
-        {/* The reply is not evidence of a write. Measured: told twice that the
-            save had failed, the model still said "I've added it to your deck."
-            The server reports what actually landed, and when nothing did, that
-            is said here rather than left to the prose.
+        {/* The reply is not evidence of a write. Measured twice: told the save
+            had failed, the model still said "I've added it to your deck" — and
+            on the first real agent run it reported a save it had never even
+            attempted. The server reports what actually landed, and when nothing
+            did, that is said here rather than left to the prose.
+
+            No cause is named, because the server knows the outcome and not the
+            reason: the characters may have failed to resolve, or the model may
+            have claimed a save it never made. Asserting either would be wrong
+            half the time.
 
             The retry has to name a word. "save that to a deck" is all Latin, so
             it resolves no characters, so the save has nothing to work with —
             offering it here sent the learner round the same loop forever. */}
         {result?.agent?.saveFailed && (
           <p className="text-sm rounded-card border border-border bg-surface-alt px-3.5 py-2.5">
-            Nothing was saved — I couldn&rsquo;t match those characters to real words.
+            Nothing was saved to a deck.
             {savable ? (
               <>
                 {" "}

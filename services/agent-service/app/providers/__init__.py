@@ -28,11 +28,28 @@ def build_model(config: Settings) -> BaseChatModel:
     from pydantic import SecretStr
 
     # Everything OpenAI-compatible arrives here, SEA-LION included — the Worker
-    # takes the same route. AI_BASE_URL is the host; the client appends the
-    # path, so it is passed through unchanged.
+    # takes the same route with the same variables.
     return ChatOpenAI(
         model=config.model or "gpt-4o-mini",
-        base_url=config.base_url,
+        base_url=openai_base(config.base_url),
         api_key=SecretStr(config.api_key) if config.api_key else None,
         temperature=config.temperature,
     )
+
+
+def openai_base(url: str | None) -> str | None:
+    """`AI_BASE_URL` names a host here and an endpoint prefix in LangChain.
+
+    backend/src/ai/providers/openaiCompat.js appends `/v1/chat/completions` to
+    the value, so the Worker's config holds a bare host —
+    `https://api.sea-lion.ai`. ChatOpenAI appends only `/chat/completions`, so it
+    needs the `/v1` already there.
+
+    One variable, two conventions, and the failure is a 404 from a URL that
+    looks right in both config files. Normalised here so a single value works in
+    both processes instead of requiring two that must be kept in step.
+    """
+    if not url:
+        return None
+    trimmed = url.rstrip("/")
+    return trimmed if trimmed.endswith("/v1") else f"{trimmed}/v1"

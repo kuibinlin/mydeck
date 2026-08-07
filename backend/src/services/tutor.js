@@ -120,6 +120,68 @@ export const wantsToSave = (message) => {
   return SAVE_INTENT.test(text) || SAVE_INTENT_ZH.test(text);
 };
 
+// The model saying it saved something, when it did not call the tool at all.
+//
+// Measured on the first real run of the Python path, and the JavaScript path
+// does the same thing: asked to save with the tool withheld, the model replied
+// "I've saved 医院 to your private draft deck" having called nothing. The prompt
+// tells it to offer rather than report in that case; it reported.
+//
+// `saveAttempts` cannot see this, because there was no attempt — so the learner
+// got a claim with nothing in the app contradicting it. This is the other half
+// of that signal: not "the save failed" but "the save never happened and you
+// were told otherwise".
+//
+// PAST TENSE, because an offer is the correct answer here and must not trip it.
+// "I can save that for you" and "Would you like me to add these?" are what the
+// prompt asks for; "I've added them to your deck" is the lie.
+// Two shapes, because a claim does not always name where it went. The first
+// wants a deck noun nearby; the second catches the terse form — "Done! I've
+// saved it." — which is plausible output and slipped through on its own.
+const CLAIMED_SAVE = [
+  /\b(saved|added|stored|kept|created|put)\b[^.!?]{0,60}\b(deck|flashcards?|collection)\b/i,
+  /\b(saved|added)\s+(it|them|those|these|that)\b/i,
+];
+
+// Tense is not enough on its own: `put` is its own past tense, so "Shall I put
+// them in a deck?" reads identically to a report. Modal framing settles it —
+// whatever verb follows, this is an offer.
+const OFFERING =
+  /\b(shall|should|can|could|may|would|will|i'?ll|want me|like me)\b[^.!?]{0,40}\b(save|add|store|keep|creat|put)/i;
+
+const CLAIMED_SAVE_ZH = /已(?:经)?(?:保存|添加|加入|存好|存入)/;
+
+export const claimsSave = (text) => {
+  const said = typeof text === "string" ? text : "";
+  if (CLAIMED_SAVE_ZH.test(said)) return true;
+
+  // Sentence by sentence, so one offer at the end cannot excuse a claim at the
+  // start — "I've added them to your deck. Shall I save more?" is still a lie.
+  return said
+    .split(/[.!?\n]+/)
+    .some(
+      (sentence) =>
+        CLAIMED_SAVE.some((pattern) => pattern.test(sentence)) && !OFFERING.test(sentence),
+    );
+};
+
+/**
+ * True when the learner ended up with nothing and was told otherwise.
+ *
+ * `saves.length === 0` is checked FIRST, and that ordering is what makes a
+ * prose heuristic safe here: the flag can only ever fire when nothing was
+ * saved, so "nothing was saved" is a true statement every time it appears. A
+ * regex false positive costs a redundant line on a turn where nothing was
+ * saved anyway; a false negative is only today's behaviour. Neither can put a
+ * wrong claim on screen.
+ *
+ * Computed in one place so both implementations get it — the remote path
+ * inherited this hole from the local one, and a fix in either alone would
+ * leave the other lying.
+ */
+const saveMissing = (text, attempts, saves) =>
+  saves.length === 0 && (attempts > 0 || claimsSave(text));
+
 const SYSTEM = [
   "You are a patient Chinese tutor inside a flashcard app called MyDeck.",
   "",
@@ -468,9 +530,10 @@ async function runLocal(env, { user, message, level, seed, history, offered, res
     stoppedBy: result.stoppedBy,
     activities,
     saves,
-    // True when the model tried to save and nothing landed. The client says so
-    // rather than letting the reply be the only account of what happened.
-    saveFailed: saveAttempts > 0 && saves.length === 0,
+    // True when the learner has no cards and the reply implies otherwise —
+    // whether the model tried and failed, or never tried and said it had. The
+    // client says so rather than letting the reply be the only account.
+    saveFailed: saveMissing(result.text, saveAttempts, saves),
     // Always false on this path, and that is not an oversight.
     //
     // Here a failed create_activity comes back to the model as {ok:false,
@@ -556,7 +619,7 @@ async function runRemote(env, { user, message, level, seed, history, offered, re
     stoppedBy: response.stoppedBy,
     activities: done.activities,
     saves: done.saves,
-    saveFailed: done.saveAttempts > 0 && done.saves.length === 0,
+    saveFailed: saveMissing(response.message, done.saveAttempts, done.saves),
     // The model asked for an activity and none was built. It cannot know — the
     // action ran after the loop ended — so this is the only thing that can say
     // so. Same job saveFailed does for a write.
@@ -825,6 +888,7 @@ export const TUTOR = {
   TUTOR_MODEL_DEFAULTS,
   tutorModel,
   wantsToSave,
+  claimsSave,
   agentMode,
   buildKnownWords,
 };

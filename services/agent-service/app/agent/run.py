@@ -73,9 +73,18 @@ async def run_turn(
 ) -> TurnResponse:
     config = config or settings()
     state = TurnState.from_request(request, config)
-    chat = model or build_model(config)
     meter = RunMeter()
     messages = _to_langchain(request)
+
+    try:
+        chat = model or build_model(config)
+    except Exception as err:  # noqa: BLE001
+        # A provider that cannot even be constructed — no key, unknown name — is
+        # a turn that could not happen, not a crash. Reported the same way a
+        # provider failure is, so the Worker reads a turn it can fall back from
+        # rather than an opaque 500 from the endpoint.
+        log.error("provider unavailable (%s): %s", type(err).__name__, err)
+        return _respond(request, state, meter, text="", stopped_by="model_error")
 
     outcome = await _invoke(chat, state, request, messages, config, meter)
 
@@ -84,6 +93,17 @@ async def run_turn(
         if rescued := await _answer_without_tools(chat, messages, meter):
             text, stopped_by = rescued, "answered_after_cap"
 
+    return _respond(request, state, meter, text=text, stopped_by=stopped_by)
+
+
+def _respond(
+    request: TurnRequest,
+    state: TurnState,
+    meter: RunMeter,
+    *,
+    text: str,
+    stopped_by: StopReason,
+) -> TurnResponse:
     return TurnResponse(
         contract_version=CONTRACT_VERSION,
         request_id=request.request_id,

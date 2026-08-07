@@ -489,3 +489,88 @@ describe("both entry points", () => {
     expect((await res.json()).kind).toBe("activity_result");
   });
 });
+
+describe("a save that was claimed but never attempted", () => {
+  // Measured on the first real agent run: asked to save with the tool withheld,
+  // the model replied "I've saved 医院 to your private draft deck" having called
+  // nothing. saveAttempts was 0, so nothing in the app contradicted it.
+  //
+  // The JavaScript path has always done this too — the fix is in the shared
+  // saveFailed computation so both are covered.
+
+  it("recognises a completed claim, not an offer", () => {
+    const { claimsSave } = TUTOR;
+
+    // Reports — the thing the prompt tells it not to do without calling.
+    expect(claimsSave("I've saved 医院 to your private draft deck.")).toBe(true);
+    expect(claimsSave("Added them to your Hospital words deck.")).toBe(true);
+    expect(claimsSave("Those are now stored in your flashcard deck.")).toBe(true);
+    expect(claimsSave("已保存到你的卡片集。")).toBe(true);
+
+    // Offers — the correct answer when it cannot save, and must not trip it.
+    expect(claimsSave("I can save 医院 to a deck for you.")).toBe(false);
+    expect(claimsSave("Would you like me to add these to a deck?")).toBe(false);
+    expect(claimsSave("Shall I put them in a deck?")).toBe(false);
+    expect(claimsSave("Ask me to save it and I will.")).toBe(false);
+
+    // Terse claims that never name a deck. "Done! I've saved it." is
+    // plausible output and slipped through the deck-noun pattern alone.
+    expect(claimsSave("Done! I've saved it.")).toBe(true);
+    expect(claimsSave("Added them for you.")).toBe(true);
+    expect(claimsSave("I can save it if you like.")).toBe(false);
+
+    // A trailing offer does not excuse a claim in the sentence before it.
+    expect(claimsSave("I've added them to your deck. Shall I save more?")).toBe(true);
+
+    // Ordinary tutoring prose.
+    expect(claimsSave("医院 is the everyday word for a hospital.")).toBe(false);
+    expect(claimsSave("")).toBe(false);
+  });
+
+  it("contradicts a remote reply that claims a save it never made", async () => {
+    const out = await respond(remote(), {
+      user,
+      message: "boast",
+      seed: [card("医院", "yīyuàn", "hospital")],
+    });
+
+    expect(out.saves).toEqual([]);
+    expect(out.saveFailed).toBe(true);
+    expect(await cardsIn(1)).toEqual([]);
+  });
+
+  it("contradicts a local reply that claims a save it never made", async () => {
+    spy = scriptModel([turn("I've saved 医院 to your deck.")]);
+
+    const out = await respond(env, {
+      user,
+      message: "save 医院",
+      seed: [card("医院", "yīyuàn", "hospital")],
+    });
+
+    expect(out.saves).toEqual([]);
+    expect(out.saveFailed).toBe(true);
+  });
+
+  it("stays quiet when the model correctly offers instead of claiming", async () => {
+    const out = await respond(remote(), { user, message: "offer", seed: [] });
+    expect(out.saveFailed).toBe(false);
+  });
+
+  it("stays quiet on an ordinary turn", async () => {
+    const out = await respond(remote(), { user, message: "ok", seed: [] });
+    expect(out.saveFailed).toBe(false);
+  });
+
+  it("never fires when a save actually landed", async () => {
+    // The guard is ordered so the flag can only appear when nothing was saved.
+    const out = await respond(remote(), {
+      user,
+      message: "please save putref",
+      seed: [card("医院", "yīyuàn", "hospital")],
+    });
+
+    expect(out.saves).toHaveLength(1);
+    expect(out.saveFailed).toBe(false);
+  });
+});

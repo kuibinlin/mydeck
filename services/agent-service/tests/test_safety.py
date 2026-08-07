@@ -8,8 +8,10 @@ and leaking prompts, and it looked exactly like a normal failure.
 
 import os
 
+import pytest
+
 from app.config import settings
-from app.providers import build_model
+from app.providers import build_model, openai_base
 from app.providers.scripted import ScriptedChatModel
 from app.tracing import callbacks, enabled
 
@@ -37,3 +39,22 @@ def test_tracing_is_off_so_no_prompt_leaves_the_process() -> None:
     # their vocabulary. Off without credentials, and credentials are cleared.
     assert enabled() is False
     assert callbacks() == []
+
+
+@pytest.mark.parametrize(
+    ("configured", "used"),
+    [
+        # What backend/wrangler.toml actually holds: a bare host, because
+        # openaiCompat.js appends /v1/chat/completions to it.
+        ("https://api.sea-lion.ai", "https://api.sea-lion.ai/v1"),
+        ("https://api.sea-lion.ai/", "https://api.sea-lion.ai/v1"),
+        # Already an endpoint prefix — left alone.
+        ("https://api.sea-lion.ai/v1", "https://api.sea-lion.ai/v1"),
+        ("https://api.groq.com/openai/v1", "https://api.groq.com/openai/v1"),
+        (None, None),
+    ],
+)
+def test_the_worker_and_langchain_agree_on_the_base_url(configured, used) -> None:
+    """One variable, two conventions, and the failure is a 404 from a URL that
+    looks right in both config files."""
+    assert openai_base(configured) == used
