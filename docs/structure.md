@@ -176,8 +176,10 @@ services/
 ```
 
 **Status: the loop runs.** What has never happened is a real provider behind it,
-and nothing is deployed. `docs/architecture.md` §11 is the sequence; Terraform
-comes after local parity.
+and nothing is deployed. `docs/architecture.md` §11 is the sequence, and steps
+1–4 are done: the GCP foundation is applied (`bootstrap/`, `artifact-registry/`,
+`iam/`), so there is somewhere to push an image and an identity to push it with.
+There is still no Cloud Run service, which is step 5.
 
 Three things about it that are decisions rather than details:
 

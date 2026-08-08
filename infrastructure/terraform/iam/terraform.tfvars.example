@@ -1,0 +1,84 @@
+# Copy this file to terraform.tfvars before applying this module.
+#
+# The real terraform.tfvars file is gitignored because tfvars contain
+# environment-specific configuration and may contain sensitive values in other
+# modules. Do not rely on tfvars as a secret-storage mechanism.
+#
+# cp terraform.tfvars.example terraform.tfvars
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Google Cloud
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Google Cloud project that owns the MyDeck infrastructure.
+project_id = "mydeck-linsnotes"
+
+# Default Google Cloud region used by this module.
+region = "asia-southeast1"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GitHub Workload Identity Federation
+# ─────────────────────────────────────────────────────────────────────────────
+
+# These two values identify the GitHub repository that Google is allowed to
+# trust through Workload Identity Federation.
+#
+# Together they represent:
+#
+#   kuibinlin/mydeck
+#
+# Keep owner and repository as separate values. Do not include "/" in either.
+#
+# The WIF provider uses these values to reject OIDC tokens from other GitHub
+# repositories.
+github_owner      = "kuibinlin"
+github_repository = "mydeck"
+
+
+# Git ref allowed to impersonate the deploy service account.
+#
+# The WIF provider itself may accept tokens from any branch of the trusted
+# repository, which leaves room for future read-only jobs such as Terraform
+# plan on pull requests.
+#
+# The IAM binding for the deploy service account should use this value together
+# with the repository identity so that only:
+#
+#   kuibinlin/mydeck@refs/heads/main
+#
+# can obtain deployment permissions.
+#
+# Use the full Git ref, not just "main".
+deploy_ref = "refs/heads/main"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Artifact Registry
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Artifact Registry repository that the GitHub deploy service account may push
+# container images to.
+#
+# This must match repository_id in the artifact-registry Terraform module.
+artifact_repository_id = "mydeck-images"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Environments
+# ─────────────────────────────────────────────────────────────────────────────
+
+# One runtime service account is created per environment listed here:
+#
+#   ["dev"]           → mydeck-agent-dev-runtime
+#   ["dev", "prod"]   → adds mydeck-agent-prod-runtime
+#
+# The name matches the Cloud Run service it runs as, per docs/architecture.md
+# §12.
+#
+# Add "prod" when the production service actually exists. Do not let two
+# environments share one runtime account — a shared identity is a single IAM
+# principal, so dev would be able to read prod's secrets and no per-secret grant
+# in secrets/ could prevent it.
+environments = ["dev"]

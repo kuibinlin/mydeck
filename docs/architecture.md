@@ -1,12 +1,15 @@
 # Architecture — current state and proposed direction
 
-> **Status: decided, not implemented.**
+> **Status: §11 steps 1–4 done. Nothing is deployed, and the JavaScript tutor is
+> still authoritative.**
 >
 > [structure.md](structure.md) describes what the repository *is* today. This
-> document describes where it is *going*. The direction is settled (§8); none of
-> it exists yet.
+> document describes where it is *going*, and the two have started to overlap:
+> the contract, the tests, the Python loop, the Worker's composition path and the
+> GCP foundation all exist. What does not exist is a Cloud Run service, a real
+> model provider behind the Python loop, or any flag turned on.
 >
-> Last revised: 2026-08-07. Every number and import claim below was measured
+> Last revised: 2026-08-08. Every number and import claim below was measured
 > against the tree at that date; re-measure before trusting them.
 
 ---
@@ -418,9 +421,98 @@ This was the decision `infrastructure/README.md` flagged as required before any
 
 | Owner | Owns |
 |---|---|
-| Terraform | Artifact Registry, Cloud Run service config, Secret Manager containers, service accounts, IAM, GitHub OIDC, monitoring, alerts, relevant Cloudflare resources |
-| Wrangler | the Worker script itself |
+| Terraform — GCP | Artifact Registry, Cloud Run service config, Secret Manager containers, service accounts, IAM, GitHub OIDC (WIF), monitoring, alerts |
+| Terraform — Cloudflare | DNS records, zone settings, Pages project, the D1 database and KV namespace **as containers** |
+| Terraform — GitHub | repository ruleset, environments, non-secret Actions variables |
+| Wrangler | the Worker script — body, bindings, vars, secrets |
 | Cloudflare Pages | the frontend bundle |
+
+The Worker line is not a preference. `cloudflare_workers_script` carries
+`content`, `bindings`, `compatibility_date`, `observability` and `limits` as
+**one resource** — the same set `backend/wrangler.toml` declares and `wrangler
+deploy` uploads. There is no seam: whichever tool uploads the script owns its
+bindings. So Terraform creates the D1 database and the KV namespace, and
+`wrangler.toml` binds them. The `database_id` is copied across by hand, which is
+the price of the split and is cheaper than the drift.
+
+The same applies to routes. `[[routes]]` in `wrangler.toml` **or**
+`cloudflare_workers_route` — declaring both is drift by construction.
+
+`cloudflare_workers_secret` was removed in provider v5, so Cloudflare secret
+values stay with `wrangler secret put` without anyone having to enforce §10.
+
+### 9.1 Three providers, three lifecycles
+
+The providers are not three copies of the same exercise. Each is a different
+Terraform discipline, which is why all three earn their place:
+
+| Provider | Lifecycle | Why it is different |
+|---|---|---|
+| Google | **create** | Greenfield. Terraform is the only thing that has ever touched these resources. |
+| Cloudflare | **import / adopt** | D1, KV, DNS and Pages already exist and hold live data. `terraform import`, never re-create. |
+| GitHub | **govern / connect** | SaaS configuration that surrounds the repo, plus the wiring between the other two. |
+
+Cloudflare D1 and KV carry `lifecycle { prevent_destroy = true }`, the same
+treatment as the state bucket. A replacement drops user data, which makes them
+higher-stakes than anything in `bootstrap/` or `artifact-registry/`.
+
+### 9.2 One provider per root module
+
+Each directory under `infrastructure/terraform/` is its own root module with its
+own state prefix in the shared GCS bucket. That already held for the GCP
+modules; `cloudflare/` and `github/` extend the pattern rather than breaking it.
+
+```text
+terraform/
+├── bootstrap/           google
+├── artifact-registry/   google
+├── iam/                 google
+├── secrets/             google
+├── run-dev/             google
+├── cloudflare/          cloudflare
+└── github/              github
+```
+
+**Do not collapse these into one root module with three providers.** The point
+is blast radius: an apply in `cloudflare/` cannot touch Cloud Run, an apply in
+`github/` cannot touch DNS. Multi-provider is a property of the repository, not
+of a module.
+
+### 9.3 `github/` publishes infrastructure outputs
+
+The GitHub module's operational job — as distinct from governance — is to carry
+non-secret Terraform outputs into the CI environment, so no long identifier is
+ever pasted into YAML by hand:
+
+```text
+GCP Terraform outputs → github/ → Actions variables → deploy workflow
+```
+
+Artifact Registry URI, WIF provider resource name, deploy service account email,
+Cloud Run service name, region. All read via `terraform_remote_state` from the
+GCP modules' state prefixes; all non-secret, which is what keeps this clear of
+§10. A WIF provider name is a long resource path nobody types correctly twice.
+
+**The repository is public, so treat these as published.** Workflow logs on a
+public repo are world-readable, and any variable a step echoes is in them. That
+is fine — WIF's security rests on the provider's `attribute_condition`, not on
+the provider name being obscure. But it is only fine if that condition actually
+pins the repository:
+
+```hcl
+attribute_condition = "assertion.repository_owner == 'kuibinlin' && assertion.repository == 'kuibinlin/mydeck'"
+```
+
+Owner *and* repository. A condition matching on `repository_owner` alone, or
+absent entirely, lets any GitHub Actions workflow anywhere mint tokens for the
+service account — and a public repo hands an attacker every identifier needed to
+try. `iam/` is where this is enforced.
+
+**No Actions secrets.** `github_actions_secret` requires the *value*, so
+Terraforming one puts it in state in plaintext — see §10. Secrets are set
+through the GitHub UI or `gh`, out of band, exactly as Secret Manager values are.
+
+### 9.4 Where applies run
 
 Pull requests run checks only, never deploys: lint and test all three packages,
 build the frontend, build the image, `terraform fmt` / `validate` / `plan`.
@@ -430,7 +522,12 @@ not redeploy the API. Every deploy ends with a smoke test — see
 [.github/workflows/README.md](../.github/workflows/README.md), which shows why
 asserting on `/version` catches a silent rollback that `/health` cannot.
 
-Terraform applies only from a reviewed merge, never from a pull request.
+Terraform applies only from a reviewed merge, never from a pull request —
+**except `github/`, which applies locally.** Its provider credential is a
+repo-admin PAT; held in Actions secrets it would be a credential stored inside
+the thing it governs, able to delete the branch protection that made the merge
+"reviewed". Repository governance changes roughly never, so a manual apply costs
+nothing and the trust loop disappears.
 
 ---
 
@@ -440,26 +537,46 @@ Terraform applies only from a reviewed merge, never from a pull request.
 |---|---|
 | Cloudflare secrets | `RESEND_API_KEY`, GitHub OAuth pair, `AI_API_KEY`, agent shared secret |
 | Google Secret Manager | LLM API keys, tracing keys, agent shared secret |
-| GitHub Actions secrets | scoped Cloudflare deploy token only |
+| GitHub Actions secrets | the Cloudflare **deploy** token only |
 | Google credentials | **none stored** — Workload Identity Federation |
+| Local only | the Cloudflare **Terraform** token, the GitHub PAT |
 
 Never in: git, `.tfvars`, Docker images, `.env.example`, `wrangler.toml.example`.
 
 Terraform state records resource attributes in plaintext, so a secret passed
 through a Terraform variable becomes a secret stored in the state bucket. Secret
-Manager holds the *containers*; values are set out of band.
+Manager holds the *containers*; values are set out of band. The same rule is why
+`github/` manages Actions *variables* and never Actions secrets (§9.3).
+
+**Two Cloudflare tokens, not one.** They differ in scope, lifetime and holder,
+and reusing one for both jobs hands CI the ability to rewrite DNS:
+
+| Token | Held by | Scopes |
+|---|---|---|
+| deploy | GitHub Actions | Workers Scripts:Edit |
+| Terraform | your machine | Zone:DNS:Edit, D1:Edit, Workers KV Storage:Edit, Pages:Edit |
 
 ---
 
 ## 11. Sequencing
 
-Nothing below is started. **The JavaScript tutor stays live and authoritative
-until step 8.** Each step leaves the app fully working.
+**The JavaScript tutor stays live and authoritative until step 8.** Each step
+leaves the app fully working.
 
-1. **Define the Worker ↔ Python contract** (§7.2) and write it down as schemas on
+Steps 1–4 are done. Two things that reads as but is not:
+
+- **"The Python loop runs" is not "the Python loop works."** No real model
+  provider has ever been behind it — every test drives `ScriptedChatModel`, and
+  `tests/test_safety.py` enforces that. Step 6 is the first time real output
+  meets this code.
+- **"The GCP foundation is applied" is not "CI can deploy."** The deploy account
+  can push an image; it cannot yet ship a revision, because `roles/run.developer`
+  is scoped to a Cloud Run service that does not exist. `run-dev/` grants it.
+
+1. **Define the Worker ↔ Python contract** (§7.2) — *done.* and write it down as schemas on
    both sides before either exists. This is the artefact steps 2 and 3 are built
    against.
-2. **Write the contract tests.** These do not "port" — they *split*.
+2. **Write the contract tests** — *done.* These do not "port" — they *split*.
    `backend/test/tutor.test.js` currently drives a scripted model and asserts
    against D1, which Python cannot do. It becomes:
    - Python: given this scripted model, the agent returns these `intended_actions`
@@ -467,9 +584,9 @@ until step 8.** Each step leaves the app fully working.
      is correct
 
    Both halves are writable before the service exists.
-3. **Build `services/agent-service/` locally** — `/health`, `/version`, then the
+3. **Build `services/agent-service/` locally** — *done.* `/health`, `/version`, then the
    agent loop. Run it as a container locally. No cloud resources yet.
-3b. **Build the Worker's composition path against the fixed response.** Added
+3b. **Build the Worker's composition path against the fixed response** — *done.* Added
    after step 3 was done, and it belongs before the cloud work rather than after
    it: flag selection, the request build, policy validation, action
    materialisation, the fallback policy and shadow mode are all Worker-side, all
@@ -477,10 +594,13 @@ until step 8.** Each step leaves the app fully working.
    eventually does. Doing it here means porting the loop later changes one
    process instead of changing routing, persistence, contracts and agent
    behaviour at once.
-4. **Terraform the GCP bootstrap** — project, state bucket, Artifact Registry,
-   OIDC. Still nothing deployed.
-5. **Deploy `mydeck-agent-dev` to Cloud Run** via Terraform. The pipeline is the
-   deliverable; correctness comes next.
+4. **Terraform the GCP bootstrap** — *done.* Project, state bucket, Artifact
+   Registry, OIDC, applied as `bootstrap/`, `artifact-registry/` and `iam/`.
+   Still nothing deployed, and CI cannot yet ship a revision — `run.developer` is
+   scoped to a service that does not exist.
+5. **Deploy `mydeck-agent-dev` to Cloud Run** via Terraform — `secrets/` first,
+   because the service mounts `AGENT_SERVICE_SECRET` at creation, then
+   `run-dev/`. The pipeline is the deliverable; correctness comes next.
 6. **Shadow mode** — the Worker calls Python alongside its own tutor, compares,
    logs divergence, and discards the Python result. See the warning below.
 7. **Flag it on for your own account.** Python authoritative for one user, JS for
@@ -491,6 +611,15 @@ until step 8.** Each step leaves the app fully working.
    everything non-agentic** (§4).
 
 Do not create Artifact Registry or Cloud Run before the container runs locally.
+
+**`cloudflare/` and `github/` are not on this path.** The numbered steps are the
+agent service's critical path, and neither module blocks any of them. Do
+`cloudflare/` once the GCP chain is through step 5, and `github/` after that,
+since it reads the outputs of `artifact-registry/`, `iam/` and `run-dev/` (§9.3).
+
+`github/` should stay small — a ruleset, environments, and variables read from
+remote state. If it grows past roughly sixty lines it has stopped being
+governance and started being Terraform for its own sake.
 
 > ### Shadow mode doubles AI consumption
 >
@@ -537,8 +666,16 @@ services/agent-service/                      directory
 backend/src/integrations/agentService.js     the Worker's client (§7.1)
 mydeck-agent                                 image name
 mydeck-agent-dev / mydeck-agent-prod         Cloud Run services
+mydeck-agent-dev-runtime / -prod-runtime     the identity each service runs as
 asia-southeast1-docker.pkg.dev/mydeck-linsnotes/mydeck-images/mydeck-agent:<sha>
 ```
+
+The runtime identities carry the environment because there is one per service,
+not one shared — `secrets/` grants `secretAccessor` per secret, and two services
+sharing an account are one IAM principal, so no per-secret grant could keep
+prod's secrets out of dev's reach. `mydeck-deploy` is the deliberate exception:
+one CI identity for the project, restricted by ref rather than by environment
+(§9.4).
 
 The list is the whole set on purpose. §7.1 named the client `tutorService.js`
 while this section said "use `agent` throughout", and one line disagreeing with

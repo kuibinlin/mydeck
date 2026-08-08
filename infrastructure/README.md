@@ -5,7 +5,8 @@ Infrastructure as code.
 ```text
 infrastructure/
 └── terraform/
-    └── bootstrap/      Terraform state bucket + project-wide APIs
+    ├── bootstrap/          Terraform state bucket + project-wide APIs
+    └── artifact-registry/  container images for the agent service
 ```
 
 The bootstrap module is the foundation for the rest of the Terraform
@@ -15,43 +16,62 @@ It is created first and destroyed last.
 
 ## Current state
 
-`bootstrap/` is written, `fmt`-clean and `validate`-clean.
+`bootstrap/` and `artifact-registry/` are written, `fmt`-clean and
+`validate`-clean.
 
 The remaining infrastructure is still managed outside Terraform:
 
-| Resource           | Provisioned by                 | Config lives in         |
-| ------------------ | ------------------------------ | ----------------------- |
-| Worker (API)       | `npm run deploy:api`           | `backend/wrangler.toml` |
-| D1 database        | `wrangler d1 create`           | `backend/wrangler.toml` |
-| KV namespace       | `wrangler kv namespace create` | `backend/wrangler.toml` |
-| Workers AI binding | `[ai]` block                   | `backend/wrangler.toml` |
-| Pages site         | Cloudflare dashboard           | dashboard only          |
-| Cloudflare secrets | `wrangler secret put`          | Cloudflare              |
-
-The GCP infrastructure will be moved into Terraform incrementally.
+| Resource           | Provisioned by                 | Config lives in         | Terraform later? |
+| ------------------ | ------------------------------ | ----------------------- | ---------------- |
+| Worker (API)       | `npm run deploy:api`           | `backend/wrangler.toml` | **no** — see below |
+| Workers AI binding | `[ai]` block                   | `backend/wrangler.toml` | **no** — part of the script |
+| Cloudflare secrets | `wrangler secret put`          | Cloudflare              | **no** — §10     |
+| D1 database        | `wrangler d1 create`           | `backend/wrangler.toml` | yes, by import   |
+| KV namespace       | `wrangler kv namespace create` | `backend/wrangler.toml` | yes, by import   |
+| DNS / zone         | Cloudflare dashboard           | dashboard only          | yes              |
+| Pages site         | Cloudflare dashboard           | dashboard only          | yes              |
+| Repo governance    | GitHub dashboard               | dashboard only          | yes              |
 
 ## What Terraform owns
 
-The intended GCP structure is:
+Three providers, and each is a different Terraform lifecycle — create, adopt,
+govern. `docs/architecture.md` §9.1 is the reasoning; the layout is:
 
 ```text
-bootstrap/
+bootstrap/           google       ← first, and destroyed last
     ↓
-artifact-registry/
+artifact-registry/   google
     ↓
-iam/
+iam/                 google
     ↓
-secrets/
+secrets/             google
     ↓
-run-dev/
+run-dev/             google
     ↓
-observability/
+observability/       google
+
+cloudflare/          cloudflare   ← independent of the chain above
+github/              github       ← last: reads the others' outputs
 ```
 
 Each directory is a separate Terraform root module with its own state.
 
 They share the same remote GCS state bucket, but use different state prefixes so
 their state remains separate.
+
+**One provider per root module.** Not one root module declaring `google`,
+`cloudflare` and `github` together. The point is blast radius: an apply in
+`cloudflare/` cannot touch Cloud Run, an apply in `github/` cannot touch DNS.
+
+`cloudflare/` sits outside the dependency chain — it shares nothing with the GCP
+modules and can be built at any point. `github/` goes last because it reads the
+GCP modules' outputs through `terraform_remote_state` and publishes them as
+Actions variables (§9.3).
+
+`github/` is also the one module that **applies locally, not from CI** — its
+credential is a repo-admin PAT, and holding that in Actions secrets would put
+the credential that governs the repository inside the repository it governs. See
+§9.4.
 
 ## Why bootstrap exists
 
@@ -115,6 +135,10 @@ Infrastructure must be created from the foundation upward.
 8. production infrastructure later
 ```
 
+`cloudflare/` is not in that chain — it depends on nothing above it and can be
+built whenever. `github/` comes after the GCP modules it reads outputs from:
+`artifact-registry/`, `iam/` and `run-dev/`.
+
 ### 1. Google Cloud project
 
 The project itself must already exist and have billing attached.
@@ -168,7 +192,10 @@ iam/
 secrets/
 run-dev/
 observability/
+github/           ← reads the above through terraform_remote_state
 ```
+
+`cloudflare/` has no place in that order — build it at any point.
 
 Each module should be reviewed with:
 
@@ -199,6 +226,8 @@ The normal teardown order is therefore:
 ```text
 production resources, if any
         ↓
+github/
+        ↓
 observability/
         ↓
 run-dev/
@@ -211,6 +240,19 @@ artifact-registry/
         ↓
 bootstrap/ LAST
 ```
+
+`github/` goes first among these, because it holds the only references *into*
+the GCP modules' state. `cloudflare/` can be destroyed at any point — but note
+that its D1 and KV resources carry `prevent_destroy`, and removing that guard to
+destroy them deletes live user data. That is the intent.
+
+**`iam/` is not an ordinary module either.** Its workload identity pool and
+provider carry `prevent_destroy`, so `terraform destroy` fails until the blocks
+are removed deliberately. That guard exists because Google soft-deletes both and
+holds their IDs in reserve for 30 days: destroying them does not free
+`mydeck-github` or `github-actions`, it makes the module unbuildable as written
+until the reservation lapses. If it happens anyway, `undelete` and re-import
+rather than wait — the commands are in `iam/workload-identity.tf`.
 
 For each normal module, first review:
 
@@ -338,6 +380,36 @@ Wrangler owns the Cloudflare Worker application deployment.
 
 Do not have Terraform and Wrangler both manage the same resource.
 
+This is not a preference — the Cloudflare API offers no seam. In provider v5,
+`cloudflare_workers_script` carries `content`, `bindings`, `compatibility_date`,
+`observability` and `limits` as a **single resource**, which is the same set
+`backend/wrangler.toml` declares and `wrangler deploy` uploads. Whichever tool
+uploads the script owns its bindings.
+
+So the split is:
+
+```text
+Terraform   the D1 database and KV namespace exist   ← containers
+Wrangler    the Worker is bound to them              ← bindings
+```
+
+The `database_id` and KV `id` are copied into `backend/wrangler.toml` by hand.
+That copy is the cost of the split, and it is cheaper than two tools fighting
+over one resource.
+
+Routes are the same choice: `[[routes]]` in `wrangler.toml` **or**
+`cloudflare_workers_route`, never both.
+
+D1 and KV already exist and hold live data, so they are adopted with
+`terraform import`, never re-created:
+
+```bash
+terraform import cloudflare_d1_database.main '<account_id>/<database_id>'
+```
+
+Both carry `lifecycle { prevent_destroy = true }` — a replacement drops user
+data, which makes them higher-stakes than anything in `bootstrap/`.
+
 See `docs/architecture.md` §9.
 
 ### Secrets stay out of Terraform where possible
@@ -359,6 +431,26 @@ The Cloudflare equivalent is:
 ```bash
 wrangler secret put
 ```
+
+`cloudflare_workers_secret` was removed in provider v5, so this one enforces
+itself.
+
+The GitHub equivalent is the same rule stated backwards: `github/` manages
+Actions **variables**, never Actions secrets. `github_actions_secret` requires
+the value, so declaring one writes it into the state bucket in plaintext.
+
+Terraform itself needs credentials, and those are not the same as the ones CI
+uses:
+
+| Credential                 | Held by        | Scope                                                        |
+| -------------------------- | -------------- | ------------------------------------------------------------ |
+| Cloudflare deploy token    | GitHub Actions | Workers Scripts:Edit                                          |
+| Cloudflare Terraform token | your machine   | Zone:DNS:Edit, D1:Edit, Workers KV Storage:Edit, Pages:Edit    |
+| GitHub PAT                 | your machine   | repo admin — for `github/` only                               |
+| Google                     | **nothing stored** | ADC locally, Workload Identity Federation in CI          |
+
+Two Cloudflare tokens rather than one, because reusing the Terraform token in CI
+would hand the deploy workflow the ability to rewrite DNS.
 
 See `docs/architecture.md` §10.
 
