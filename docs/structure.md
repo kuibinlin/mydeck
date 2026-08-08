@@ -175,11 +175,11 @@ services/
     └── Dockerfile              two-stage, non-root, reads $PORT
 ```
 
-**Status: the loop runs.** What has never happened is a real provider behind it,
-and nothing is deployed. `docs/architecture.md` §11 is the sequence, and steps
-1–4 are done: the GCP foundation is applied (`bootstrap/`, `artifact-registry/`,
-`iam/`), so there is somewhere to push an image and an identity to push it with.
-There is still no Cloud Run service, which is step 5.
+**Status: deployed and answering, and nothing calls it.** `docs/architecture.md`
+§11 is the sequence, and steps 1–5 are done. `mydeck-agent-dev` runs on Cloud
+Run, a real provider has been behind the loop, and a turn came back with a tool
+call in `steps`. What has *not* happened: the Worker has no `AGENT_SERVICE_URL`,
+every flag ships off, and the JavaScript tutor still answers every learner.
 
 Three things about it that are decisions rather than details:
 

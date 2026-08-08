@@ -1,15 +1,16 @@
 # Architecture — current state and proposed direction
 
-> **Status: §11 steps 1–4 done. Nothing is deployed, and the JavaScript tutor is
-> still authoritative.**
+> **Status: §11 steps 1–5 done. `mydeck-agent-dev` is deployed and answering,
+> and nothing calls it. The JavaScript tutor is still authoritative.**
 >
 > [structure.md](structure.md) describes what the repository *is* today. This
-> document describes where it is *going*, and the two have started to overlap:
-> the contract, the tests, the Python loop, the Worker's composition path and the
-> GCP foundation all exist. What does not exist is a Cloud Run service, a real
-> model provider behind the Python loop, or any flag turned on.
+> document describes where it is *going*, and most of it has now been built: the
+> contract, the tests, the Python loop, the Worker's composition path, the GCP
+> infrastructure, and a Cloud Run service with a real model behind it. What does
+> not exist is any connection between them — the Worker has no
+> `AGENT_SERVICE_URL` and every flag ships off.
 >
-> Last revised: 2026-08-08. Every number and import claim below was measured
+> Last revised: 2026-08-09. Every number and import claim below was measured
 > against the tree at that date; re-measure before trusting them.
 
 ---
@@ -593,15 +594,29 @@ and reusing one for both jobs hands CI the ability to rewrite DNS:
 **The JavaScript tutor stays live and authoritative until step 8.** Each step
 leaves the app fully working.
 
-Steps 1–4 are done. Two things that reads as but is not:
+Steps 1–5 are done. Both caveats this section used to carry are now resolved,
+and one of them resolved by finding a bug:
 
-- **"The Python loop runs" is not "the Python loop works."** No real model
-  provider has ever been behind it — every test drives `ScriptedChatModel`, and
-  `tests/test_safety.py` enforces that. Step 6 is the first time real output
-  meets this code.
-- **"The GCP foundation is applied" is not "CI can deploy."** The deploy account
-  can push an image; it cannot yet ship a revision, because `roles/run.developer`
-  is scoped to a Cloud Run service that does not exist. `run-dev/` grants it.
+- **A real provider has been behind the loop.** `aisingapore/Qwen-SEA-LION-v4-32B-IT`
+  via SEA-LION, called directly against the deployed service. It calls tools,
+  respects the allowlist, and populates `discovered_words`.
+
+  It also **failed the first turn in the exact way `wrangler.toml.example`
+  warns about** — asked "什么是水" with nothing seeded, it skipped `hsk_lookup`
+  and asserted 水 is not in HSK. It is HSK 1. The cause was not the model: the
+  prompt forbade *stating* an unsourced fact but never required the *call*, and
+  it supplied the sentence to use on a `found:false` result, so the model
+  reached for that sentence without earning it. Both language copies had it.
+  Fixed, and pinned by `services/agent-service/tests/test_prompt_parity.py`.
+
+  **No scripted test could have caught this**, which is the argument for doing
+  step 6 rather than trusting green suites: a scripted model calls the tool
+  because the script says to.
+
+- **CI's permission chain works end to end.** `run-dev/` granted the missing
+  `roles/run.developer`, and a real `gcloud run deploy` exercised push → deploy
+  → verified revision. `/version` reports the revision that `gcloud` says is
+  serving.
 
 1. **Define the Worker ↔ Python contract** (§7.2) — *done.* and write it down as schemas on
    both sides before either exists. This is the artefact steps 2 and 3 are built
@@ -628,9 +643,11 @@ Steps 1–4 are done. Two things that reads as but is not:
    Registry, OIDC, applied as `bootstrap/`, `artifact-registry/` and `iam/`.
    Still nothing deployed, and CI cannot yet ship a revision — `run.developer` is
    scoped to a service that does not exist.
-5. **Deploy `mydeck-agent-dev` to Cloud Run** via Terraform — `secrets-dev/` first,
-   because the service mounts `AGENT_SERVICE_SECRET` at creation, then
-   `run-dev/`. The pipeline is the deliverable; correctness comes next.
+5. **Deploy `mydeck-agent-dev` to Cloud Run** via Terraform — *done.*
+   `secrets-dev/` first (the service mounts `AGENT_SERVICE_SECRET` at creation),
+   then `run-dev/`, then an image built `--platform linux/amd64` and shipped
+   with `gcloud run deploy`. The pipeline was the deliverable and it works;
+   correctness is step 6.
 6. **Shadow mode** — the Worker calls Python alongside its own tutor, compares,
    logs divergence, and discards the Python result. See the warning below.
 7. **Flag it on for your own account.** Python authoritative for one user, JS for

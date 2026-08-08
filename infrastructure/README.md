@@ -19,9 +19,13 @@ It is created first and destroyed last.
 
 ## Current state
 
-`bootstrap/`, `artifact-registry/` and `iam/` are applied. `secrets-dev/` and
-`run-dev/` are written and `validate`-clean but not yet applied. All are
-`fmt`-clean.
+**Every module written so far is applied** — `bootstrap/`, `artifact-registry/`,
+`iam/`, `secrets-dev/`, `run-dev/`. `mydeck-agent-dev` serves on Cloud Run, its
+secrets are populated, and CI's permission chain has been exercised for real by
+a `gcloud run deploy`.
+
+Not written yet: `observability/`, `cloudflare/`, `github/`, and any `-prod`
+root.
 
 `run-dev/` cannot even *plan* until `secrets-dev/` is applied — it reads that
 module's state, and a state object that does not exist is a hard error rather

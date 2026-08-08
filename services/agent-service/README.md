@@ -6,10 +6,24 @@ Why it exists, what it may and may not do, and how it gets deployed are all in
 [docs/architecture.md](../../docs/architecture.md). Read §6-§8 before changing
 anything here. This file is only how to run it.
 
-**Status: the loop runs.** `create_agent` over five tools, a scripted provider
-for tests, HSK through the existing MCP server. What is *not* done: a real
-provider has never been pointed at it, and nothing is deployed. Terraform comes
-after local parity (§11).
+**Status: deployed to Cloud Run and answering.** `create_agent` over five tools,
+a scripted provider for tests, HSK through the existing MCP server. Running as
+`mydeck-agent-dev` in `asia-southeast1`, behind
+`aisingapore/Qwen-SEA-LION-v4-32B-IT`, verified end to end: a turn came back
+with `steps: [{tool: "hsk_lookup", ok: true}]` and a populated
+`discovered_words`.
+
+What is *not* done: nothing calls it. The Worker has no `AGENT_SERVICE_URL`,
+every flag ships off, and the JavaScript tutor still answers every learner
+(§11 steps 6–8).
+
+**The first real turn found a prompt defect that every test had missed.** Asked
+"什么是水" with nothing seeded, the model skipped `hsk_lookup` and asserted 水 is
+not in HSK — it is HSK 1. The prompt forbade *stating* unsourced facts but never
+required the *call*, and it supplied the exact sentence to use on a `found:false`
+result, so the model reached for that sentence without earning it. Fixed in both
+languages and pinned by `tests/test_prompt_parity.py`. A scripted model could
+never have caught it: it calls the tool because the script says to.
 
 ## The one rule
 
