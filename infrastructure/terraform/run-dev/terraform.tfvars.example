@@ -1,0 +1,96 @@
+# Copy this file to terraform.tfvars before applying this module.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# Nothing sensitive belongs here. Secret VALUES live in Secret Manager and reach
+# the container as mounts — see docs/secrets.md.
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Google Cloud
+# ─────────────────────────────────────────────────────────────────────────────
+
+project_id = "mydeck-linsnotes"
+
+# Must match the region secrets-<env>/ replicates to. A Cloud Run service cannot
+# mount a secret replicated only to another region.
+region = "asia-southeast1"
+
+# The environment this root owns. Must already exist in iam/'s environments and
+# have a matching secrets-<env>/ applied — both are checked at plan time with an
+# error naming the fix.
+environment = "dev"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Model
+# ─────────────────────────────────────────────────────────────────────────────
+
+# AI_TUTOR_MODEL — the model driving the agent loop.
+#
+# It MUST be tool-capable, and a model that cannot do tools does not always say
+# so: one accepted the tool list and then answered from memory, which reads as a
+# working reply while every fact in it skipped the dictionary. Check before
+# trusting a new one.
+#
+# Avoid reasoning models here. Four steps of visible thinking measured ~200s per
+# turn, which is the ceiling this whole migration exists to escape.
+ai_model = "aisingapore/Qwen-SEA-LION-v4-32B-IT"
+
+# "openai" covers anything OpenAI-compatible, which is how SEA-LION is reached.
+ai_provider = "openai"
+
+# Host only — the client appends the path. Leave empty for the provider default.
+ai_base_url = "https://api.sea-lion.ai"
+
+# ai_temperature = 0.3
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Capacity and timeouts
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Dev scales to zero: an idle service should cost nothing. Production will
+# likely want min_instances = 1 to keep a learner-facing request off the cold
+# start path, and that is the main cost difference between the environments.
+# min_instances = 0
+# max_instances = 2
+# concurrency   = 10
+# cpu           = "1"
+# memory        = "1Gi"
+
+# The agent stops itself at agent_deadline_s; request_timeout_s is only the
+# backstop above it. The Worker's own AGENT_SERVICE_TIMEOUT_MS (25s, in
+# backend/wrangler.toml) sits between them. Change one, check all three.
+# agent_deadline_s  = 20
+# request_timeout_s = 30
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Secret versions
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Left empty for dev, so every mount resolves to "latest" and rotation is a
+# gcloud command plus a restart rather than a Terraform change.
+#
+# Env-var secrets resolve when an INSTANCE starts, so under "latest" a rotation
+# leaves instances of the same revision holding different values until the old
+# ones are recycled. Dev accepts that; production should pin, which makes
+# rotation deliberate and a rollback just a revert of this map:
+#
+#   secret_versions = {
+#     "service-secret" = "2"
+#     "ai-api-key"     = "1"
+#   }
+# secret_versions = {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Image
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Read ONLY at first create — Terraform ignores this field afterwards, because
+# CI owns the running image. Left as the placeholder on purpose: a real-looking
+# SHA here would be permanently stale and would read as though it were what is
+# serving.
+# bootstrap_image = "gcr.io/cloudrun/hello"

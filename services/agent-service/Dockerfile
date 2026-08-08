@@ -7,6 +7,31 @@
 #   docker build -t mydeck-agent:local services/agent-service
 #   docker run --rm -p 8080:8080 mydeck-agent:local
 #
+# ─────────────────────────────────────────────────────────────────────────────
+# BUILDING FOR CLOUD RUN FROM APPLE SILICON
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Cloud Run runs x86_64. A plain `docker build` on an arm64 Mac produces an
+# arm64 image, and every step after that SUCCEEDS: it pushes to Artifact
+# Registry, `gcloud run deploy` accepts it, and the revision then fails to
+# start with an exec-format error that never mentions architecture. The image
+# is not broken and the deploy is not broken — they just do not match.
+#
+# So anything destined for Cloud Run needs the platform forced:
+#
+#   docker build --platform linux/amd64 \
+#     -t asia-southeast1-docker.pkg.dev/mydeck-linsnotes/mydeck-images/mydeck-agent:$(git rev-parse --short HEAD) \
+#     services/agent-service
+#
+# The local commands above deliberately do NOT force it. On an arm64 machine a
+# native build runs at full speed while an amd64 one runs under emulation —
+# noticeably slower, and slowest exactly where this image is heaviest, resolving
+# and byte-compiling langchain.
+#
+# Two builds for two purposes, then: native for the laptop, linux/amd64 for the
+# registry. CI on ubuntu-latest is already x86_64 and needs no flag.
+# ─────────────────────────────────────────────────────────────────────────────
+#
 # Two stages so the runtime image carries no uv, no compiler and no lockfile.
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder

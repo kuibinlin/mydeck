@@ -313,20 +313,50 @@ only conventional: `CLAUDE.md` already notes that naming words in
 ### 7.3 Authentication, and its sharp edge
 
 Cloud Run's `--no-allow-unauthenticated` requires a **Google-signed ID token**,
-which a Worker cannot mint without a service-account key — and this design
-forbids stored keys. So v1 is necessarily: public ingress plus a shared secret
-held in both Cloudflare secrets and Secret Manager.
+and the Worker has no configured flow for minting one. Note the shape of that
+claim: it is a statement about what is built, not about what Cloudflare can do.
+Workload Identity Federation trusts any OIDC issuer, so a Worker signing its own
+JWT against a published JWKS would authenticate keylessly. That is a real option
+— it costs a signing key in Worker secrets and a JWKS endpoint to serve.
 
-That means the agent URL is internet-reachable and the secret is the only gate.
-Required mitigations:
+So v1 is public invocation plus a shared secret held in both Cloudflare secrets
+and Secret Manager: fewer moving parts, and no long-lived Google service account
+key in Cloudflare. Revisit when there is a reason to, not because it is
+impossible.
 
-- constant-time comparison of the secret
-- rate limiting
-- rotation procedure written down before launch
-- the agent URL never reaches the frontend bundle
-- **put Cloud Run behind a proxied Cloudflare custom domain**, so the existing
-  WAF and rate limiting apply to it. This costs nothing and reuses infrastructure
-  already in place.
+**The application is therefore the authorization boundary, not Cloud Run IAM.**
+`app/main.py:require_secret` compares with `hmac.compare_digest`, 401s a
+mismatch, and 503s when the secret is unset while `K_SERVICE` is present, so an
+unconfigured deployment refuses to serve rather than serving to everyone.
+
+Mitigations, and their honest status:
+
+| | |
+|---|---|
+| constant-time comparison | done — `hmac.compare_digest` |
+| rotation procedure written down | done — [secrets.md](secrets.md) |
+| the agent URL never reaches the frontend bundle | done — the Worker holds it |
+| rate limiting | **not built** |
+| a perimeter that cannot be bypassed | **not built** — see below |
+
+**A proxied Cloudflare custom domain is not a perimeter.** An earlier version of
+this section claimed it was, and that was wrong: fronting Cloud Run with a
+Cloudflare hostname applies the WAF and rate limits to traffic that goes
+*through* Cloudflare, while the default `*.run.app` endpoint stays directly
+reachable. Anyone with the URL skips all of it. The URL is not a secret and
+nothing should be designed as though it were.
+
+Closing that requires restricting ingress so direct requests are refused:
+
+```
+Cloudflare → Google External Application Load Balancer → Cloud Run
+             ingress = INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER
+             optionally with the default run.app URL disabled
+```
+
+This is a `run-prod/` decision and is listed in §13. `run-dev/` deliberately
+ships the public posture: it is reachable by one allowlisted account through a
+Worker whose flags are all off, and the secret is the control.
 
 ---
 
@@ -467,7 +497,7 @@ terraform/
 ├── bootstrap/           google
 ├── artifact-registry/   google
 ├── iam/                 google
-├── secrets/             google
+├── secrets-dev/         google
 ├── run-dev/             google
 ├── cloudflare/          cloudflare
 └── github/              github
@@ -598,7 +628,7 @@ Steps 1–4 are done. Two things that reads as but is not:
    Registry, OIDC, applied as `bootstrap/`, `artifact-registry/` and `iam/`.
    Still nothing deployed, and CI cannot yet ship a revision — `run.developer` is
    scoped to a service that does not exist.
-5. **Deploy `mydeck-agent-dev` to Cloud Run** via Terraform — `secrets/` first,
+5. **Deploy `mydeck-agent-dev` to Cloud Run** via Terraform — `secrets-dev/` first,
    because the service mounts `AGENT_SERVICE_SECRET` at creation, then
    `run-dev/`. The pipeline is the deliverable; correctness comes next.
 6. **Shadow mode** — the Worker calls Python alongside its own tutor, compares,
@@ -671,7 +701,7 @@ asia-southeast1-docker.pkg.dev/mydeck-linsnotes/mydeck-images/mydeck-agent:<sha>
 ```
 
 The runtime identities carry the environment because there is one per service,
-not one shared — `secrets/` grants `secretAccessor` per secret, and two services
+not one shared — `secrets-<env>/` grants `secretAccessor` per secret, and two services
 sharing an account are one IAM principal, so no per-secret grant could keep
 prod's secrets out of dev's reach. `mydeck-deploy` is the deliberate exception:
 one CI identity for the project, restricted by ref rather than by environment
@@ -681,8 +711,9 @@ The list is the whole set on purpose. §7.1 named the client `tutorService.js`
 while this section said "use `agent` throughout", and one line disagreeing with
 another is how the tax gets paid anyway.
 
-`docs/operations.md` and `docs/secrets.md` are named in the plan and genuinely do
-not exist. They are worth writing when there is something to operate.
+`docs/operations.md` is named in the plan and genuinely does not exist; it is
+worth writing when there is something to operate. `docs/secrets.md` now exists —
+setting, verifying and rotating every secret across all three stores.
 
 ---
 
@@ -694,8 +725,22 @@ not exist. They are worth writing when there is something to operate.
   beside the tutor — one Cloud Run service, or an api/worker pair sharing an image
   (§3).
 - **Separate GCP projects per environment** (§8.5) — one project for now.
-- **`docs/operations.md` and `docs/secrets.md`** — worth writing once there is
-  something to operate.
+- **The production ingress perimeter** (§7.3). `run-dev/` is public invocation
+  plus the application secret, which is right for dev. `run-prod/` picks between
+  keeping that, or Cloudflare → Google external load balancer → Cloud Run with
+  `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER` and the default `run.app` URL
+  disabled. The second is the stronger answer; decide before step 8, not during.
+- **Rotating `AGENT_SERVICE_SECRET` without a 401 window.** `run-dev/` leaves
+  `secret_versions` empty, so mounts resolve to `latest` — and env-var secrets
+  resolve at *instance* start, so mid-rotation the same revision can hold two
+  different values while the Worker can only send one. Instances on the old
+  version 401 until they recycle. Pinning (`secret_versions`) fixes the
+  non-determinism by making rotation a deliberate new revision, but not the
+  window itself. Closing that needs the agent to **accept both the current and
+  previous secret** during a rotation. Not needed while the JS tutor answers
+  every failure by taking over; revisit before step 8.
+- **`docs/operations.md`** — worth writing once there is something to operate.
+  `docs/secrets.md` is written.
 
 ### Explicitly rejected, do not relitigate without new information
 

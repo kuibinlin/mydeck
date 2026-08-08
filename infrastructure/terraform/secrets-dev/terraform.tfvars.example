@@ -1,0 +1,88 @@
+# Copy this file to terraform.tfvars before applying this module.
+#
+# The real terraform.tfvars file is gitignored.
+#
+# Nothing sensitive belongs here even so: this Terraform root creates Secret
+# Manager CONTAINERS and IAM bindings, but never creates secret versions or
+# stores secret values.
+#
+# See docs/architecture.md §10.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Google Cloud
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Google Cloud project that owns the MyDeck infrastructure.
+project_id = "mydeck-linsnotes"
+
+# Region where this environment's secrets are stored.
+#
+# Keep this aligned with the region of the corresponding Cloud Run service.
+region = "asia-southeast1"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Environment
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# This Terraform root owns exactly ONE environment.
+#
+# For secrets-dev/:
+#
+#   environment = "dev"
+#
+# creates:
+#
+#   mydeck-agent-dev-service-secret
+#   mydeck-agent-dev-ai-api-key
+#
+# and grants access only to:
+#
+#   mydeck-agent-dev-runtime
+#
+#
+# Later, secrets-prod/ will have its own Terraform state and use:
+#
+#   environment = "prod"
+#
+# creating:
+#
+#   mydeck-agent-prod-service-secret
+#   mydeck-agent-prod-ai-api-key
+#
+# and granting access only to:
+#
+#   mydeck-agent-prod-runtime
+#
+#
+# The matching runtime service account must already exist in iam/.
+#
+# Keeping dev and prod in separate Terraform roots means an apply from
+# secrets-dev/ cannot modify production secrets because prod resources are not
+# part of this Terraform state.
+environment = "dev"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tracing
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# When false, this module creates only the required agent secret containers:
+#
+#   AGENT_SERVICE_SECRET
+#   AI_API_KEY
+#
+# When true, it additionally creates the Langfuse credential containers:
+#
+#   LANGFUSE_PUBLIC_KEY
+#   LANGFUSE_SECRET_KEY
+#
+# This flag creates only the Secret Manager containers. It does NOT set their
+# values and does not by itself enable tracing.
+#
+# Enable tracing only when you are ready to add both Langfuse values out of
+# band before deploying the matching run-<env>/ Cloud Run service.
+enable_tracing = false

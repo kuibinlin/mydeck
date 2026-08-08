@@ -42,6 +42,12 @@ docker build -t mydeck-agent:local services/agent-service
 docker run --rm -p 8080:8080 -e AGENT_SERVICE_SECRET=local mydeck-agent:local
 ```
 
+Native architecture, which is right for a laptop and wrong for Cloud Run — it
+runs x86_64 only. An arm64 image pushes and deploys without complaint, then
+fails to start with an exec-format error that never says "architecture". Builds
+destined for Artifact Registry need `--platform linux/amd64`; the Dockerfile
+header has the full command and why the local ones deliberately omit it.
+
 ## Endpoints
 
 | Route | Auth | Purpose |

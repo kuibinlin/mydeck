@@ -6,6 +6,7 @@
 | [local-development.md](local-development.md) | Running both servers, and the tests |
 | [deployment.md](deployment.md) | Shipping the Worker and the frontend; D1 migrations |
 | [reference.md](reference.md) | Every command, env var and secret, in one place |
+| [secrets.md](secrets.md) | Setting, verifying and rotating secrets across Cloudflare, Google and GitHub |
 | [structure.md](structure.md) | Where code goes and why the layout is shaped this way |
 | [architecture.md](architecture.md) | Where this is **going** — the Python agent service on Cloud Run, and why |
 

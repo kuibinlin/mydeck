@@ -128,8 +128,12 @@ committed template. Add any new var to both.
 | `GITHUB_CLIENT_ID` | Yes | GitHub OAuth app Client ID |
 | `GITHUB_CLIENT_SECRET` | Yes | GitHub OAuth app Client Secret |
 | `AI_API_KEY` | Only for non-Cloudflare providers | API key for Groq, OpenAI, or Anthropic |
+| `AGENT_SERVICE_SECRET` | Only with the agent service | Shared with Google Secret Manager — **the same value in both**, see [secrets.md](secrets.md) |
 
 For local dev these go in `backend/.dev.vars` instead (gitignored).
+
+Setting, verifying and rotating any of these — including the Google Secret
+Manager side — is [secrets.md](secrets.md).
 
 ### Optional service binding
 

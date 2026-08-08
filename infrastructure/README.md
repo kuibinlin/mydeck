@@ -6,7 +6,10 @@ Infrastructure as code.
 infrastructure/
 └── terraform/
     ├── bootstrap/          Terraform state bucket + project-wide APIs
-    └── artifact-registry/  container images for the agent service
+    ├── artifact-registry/  container images for the agent service
+    ├── iam/                WIF federation + deploy and runtime identities
+    ├── secrets-dev/        Secret Manager containers for dev
+    └── run-dev/            the agent service on Cloud Run, dev
 ```
 
 The bootstrap module is the foundation for the rest of the Terraform
@@ -16,8 +19,13 @@ It is created first and destroyed last.
 
 ## Current state
 
-`bootstrap/` and `artifact-registry/` are written, `fmt`-clean and
-`validate`-clean.
+`bootstrap/`, `artifact-registry/` and `iam/` are applied. `secrets-dev/` and
+`run-dev/` are written and `validate`-clean but not yet applied. All are
+`fmt`-clean.
+
+`run-dev/` cannot even *plan* until `secrets-dev/` is applied — it reads that
+module's state, and a state object that does not exist is a hard error rather
+than an empty map.
 
 The remaining infrastructure is still managed outside Terraform:
 
@@ -44,7 +52,7 @@ artifact-registry/   google
     ↓
 iam/                 google
     ↓
-secrets/             google
+secrets-dev/         google       ← one root per environment
     ↓
 run-dev/             google
     ↓
@@ -72,6 +80,33 @@ Actions variables (§9.3).
 credential is a repo-admin PAT, and holding that in Actions secrets would put
 the credential that governs the repository inside the repository it governs. See
 §9.4.
+
+### Central identities, per-environment workloads
+
+Two shapes here, and the difference is deliberate rather than an oversight:
+
+```text
+iam/            environments = ["dev", "prod"]     one root, every identity
+secrets-dev/    environment  = "dev"               one root per environment
+secrets-prod/   environment  = "prod"
+run-dev/        …                                  same, per environment
+```
+
+Identities are long-lived, applied rarely, and shared by definition — the WIF
+pool serves every environment, so splitting `iam/` per environment would mean
+duplicating the pool or sharing one across roots. Secrets and services are the
+opposite: applied often, and the things you least want a dev-side mistake to
+reach. They get separate state, which is what actually makes an apply in
+`secrets-dev/` incapable of touching production.
+
+The consequence is an invariant worth stating, because nothing enforces it
+structurally:
+
+> **every `secrets-<env>/` and `run-<env>/` environment must already exist in
+> `iam/`'s `environments`.**
+
+`secrets-dev/` fails at plan time with a precondition naming the fix if it does
+not, rather than with Terraform's generic missing-key error.
 
 ## Why bootstrap exists
 
@@ -189,7 +224,7 @@ After bootstrap is complete, create the remaining modules in dependency order:
 ```text
 artifact-registry/
 iam/
-secrets/
+secrets-dev/
 run-dev/
 observability/
 github/           ← reads the above through terraform_remote_state
@@ -232,7 +267,7 @@ observability/
         ↓
 run-dev/
         ↓
-secrets/
+secrets-dev/
         ↓
 iam/
         ↓
@@ -400,6 +435,32 @@ over one resource.
 Routes are the same choice: `[[routes]]` in `wrangler.toml` **or**
 `cloudflare_workers_route`, never both.
 
+### The same collision on Cloud Run
+
+`run-dev/` faces this one layer up and resolves it identically. Terraform
+declares `google_cloud_run_v2_service` including the image, so every CI deploy
+of a new SHA would put Terraform permanently out of date — and the next apply
+would roll the service back to whatever tag is written in the `.tf` file.
+
+```hcl
+lifecycle {
+  ignore_changes = [template[0].containers[0].image, client, client_version]
+}
+```
+
+Terraform owns the service **shape** — CPU, memory, concurrency, ingress,
+timeout, scaling, runtime identity, env vars, secret mounts. CI owns the
+**artifact**, via `gcloud run deploy --image ...:$SHA`. `client` and
+`client_version` are ignored for the same reason: `gcloud` stamps them on every
+deploy, and which tool last touched the service is not something Terraform has
+an opinion about.
+
+The consequence is that `var.bootstrap_image` is read only at create and never
+again, which is why it stays `gcr.io/cloudrun/hello` rather than a real SHA —
+a real-looking tag would be permanently stale and would read as though it were
+what is serving. `terraform output -raw running_image_cmd` prints the command
+that reports the truth.
+
 D1 and KV already exist and hold live data, so they are adopted with
 `terraform import`, never re-created:
 
@@ -431,6 +492,22 @@ The Cloudflare equivalent is:
 ```bash
 wrangler secret put
 ```
+
+`secrets-dev/` is built on that rule: it creates containers and grants read access,
+and contains no `google_secret_manager_secret_version` resource at all. There is
+an ordering consequence Terraform cannot express —
+
+```text
+1. terraform apply   in secrets-dev/ creates empty containers
+2. gcloud secrets versions add       by hand, per secret
+3. terraform apply   in run-dev/     mounts them
+```
+
+— because a secret with no version cannot be mounted, so skipping step 2 fails
+the Cloud Run deploy one module later than the omission. `terraform output
+set_values` prints the exact commands and `terraform output unset_check` prints
+one command that counts versions per secret. Run the second before touching
+`run-dev/`.
 
 `cloudflare_workers_secret` was removed in provider v5, so this one enforces
 itself.
