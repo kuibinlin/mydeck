@@ -834,8 +834,15 @@ function wordsFromRefs(refs, knownWords) {
  * swallowed, because a background observation must not be able to affect a
  * response that has already been sent.
  *
- * It costs the account's AI budget, not the learner's quota: Workers AI's
- * 10,000 neurons/day is account-wide. Shadow your own account only.
+ * It costs the account's AI budget, not the learner's quota. No `ai_usage_log`
+ * row is written, so `AI_DAILY_LIMIT_FREE` is untouched — the spend lands
+ * wherever the two paths' providers bill.
+ *
+ * Which account that is depends on configuration, and stating one provider here
+ * would go stale the day it changes: with AI_DEFAULT_PROVIDER="cloudflare" it is
+ * the account-wide Workers AI neuron allowance; with an API-key provider it is
+ * whatever AI_API_KEY bills. Either way a shadowed turn is two turns instead of
+ * one, and the second is discarded. Shadow your own account only.
  */
 async function shadow(env, { user, message, level, seed, history, offered, resolved, priorKnown }, local) {
   const started = Date.now();

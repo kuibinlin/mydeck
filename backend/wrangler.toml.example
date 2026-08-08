@@ -150,9 +150,22 @@ AI_TUTOR_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 # AGENT_ENABLED = "false"
 # AGENT_ALLOWED_USERS = ""            ### comma-separated emails, same shape as ADMIN_EMAILS
 
-### Shadow mode runs BOTH implementations and discards the Python result.
-### It therefore doubles model spend, and Workers AI's 10,000 neurons/day is
-### account-wide — so this is for your own account only, never a global flag.
+### Shadow mode runs BOTH implementations and discards the Python result, so a
+### shadowed turn costs two turns for one answer.
+###
+### Where that lands follows the providers: the Workers AI neuron allowance is
+### account-wide if AI_DEFAULT_PROVIDER is "cloudflare", otherwise it is whatever
+### AI_API_KEY bills — and the agent service has its own AI_PROVIDER, so the two
+### halves need not be the same account.
+###
+### It does NOT spend the learner's quota: shadow writes no ai_usage_log row, so
+### AI_DAILY_LIMIT_FREE is untouched.
+###
+### Your own account only, never a global flag.
+###
+### AGENT_ENABLED takes PRECEDENCE over this. With both true the mode is
+### "remote" and shadow never runs — comparing the remote path against the thing
+### it already replaced is the one combination with no value (services/tutor.js).
 # AGENT_SHADOW = "false"
 
 ### AGENT_SERVICE_SECRET is a secret, not a var — see line 61:

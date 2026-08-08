@@ -670,16 +670,24 @@ governance and started being Terraform for its own sake.
 
 > ### Shadow mode doubles AI consumption
 >
-> Every shadowed turn runs both implementations, so:
+> Every shadowed turn runs both implementations and discards one, so the spend is
+> two turns for one answer.
 >
-> - `AI_DAILY_LIMIT_FREE = 60` counts **model calls**, so the effective per-user
->   limit halves.
-> - Workers AI's 10,000 neurons/day is **account-wide**, not per user. The
->   existing estimate in `wrangler.toml.example` is ~45 neurons per tutor call and
->   1–4 calls per turn — roughly 50–200 turns/day before error 4006.
+> **Where that lands depends on which providers are configured**, and naming one
+> here goes stale the day it changes. With `AI_DEFAULT_PROVIDER="cloudflare"` it
+> is the **account-wide** Workers AI allowance — 10,000 neurons/day, roughly
+> 50–200 tutor turns at ~45 neurons per call and 1–4 calls per turn, then error
+> 4006 for everyone. With an API-key provider it is whatever `AI_API_KEY` bills.
+> The two sides can also be on different providers: the Worker reads
+> `AI_DEFAULT_PROVIDER`, the agent service reads its own `AI_PROVIDER`.
 >
-> So: shadow **only** your own account, and do **not** write shadow calls to
-> `ai_usage_log`. Otherwise step 6 exhausts the quota for real users.
+> What it does **not** cost is the learner's quota. `shadow()` writes no
+> `ai_usage_log` row, so `AI_DAILY_LIMIT_FREE` is untouched and the per-user
+> limit does not halve. That was a requirement when this was written and is now
+> implemented — `tutor.js:840`.
+>
+> So: shadow **only** your own account. A global `AGENT_SHADOW` doubles the bill
+> for every turn the product serves, to compare answers nobody reads.
 
 ---
 
