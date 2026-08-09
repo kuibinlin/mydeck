@@ -50,16 +50,32 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Short, stable, readable at a glance. Deliberately still literal — putting
+  # these behind a variable would move them out of sight to prove a point.
   PROJECT_ID: mydeck-linsnotes
   REGION: asia-southeast1
-  REPOSITORY: asia-southeast1-docker.pkg.dev/mydeck-linsnotes/mydeck-images/mydeck-agent
 
-  # Hardcoded for now, and deliberately so: github/ is not written yet, and its
-  # job is to publish these from iam/'s Terraform outputs as Actions variables —
-  # so that a WIF provider path nobody types correctly twice is never typed at
-  # all. Until then, these must match `terraform output` in infrastructure/iam.
-  WIF_PROVIDER: projects/174503591496/locations/global/workloadIdentityPools/mydeck-github/providers/github-actions
-  DEPLOY_SA: mydeck-deploy@mydeck-linsnotes.iam.gserviceaccount.com
+  # ───────────────────────────────────────────────────────────────────────────
+  # Published by infrastructure/terraform/github from GCP Terraform outputs.
+  #
+  #   iam/ + artifact-registry/  →  github/  →  Actions variables  →  here
+  #
+  # These were literals until github/ existed, and that was a second source of
+  # truth for values nobody can verify by eye — a 90-character WIF provider path
+  # and an image URI. Rebuild iam/ and the project number changes; the workflow
+  # would then fail with an error about token endpoints that never mentions a
+  # stale path.
+  #
+  # They are `vars`, not `secrets`, because none of them is one: WIF's security
+  # rests on the provider's attribute_condition pinning this repository, never
+  # on the provider path being unguessable (§9.3).
+  #
+  # Not automatic — `terraform apply` in github/ is what refreshes them. That is
+  # still one command rather than remembering which file holds a copy.
+  # ───────────────────────────────────────────────────────────────────────────
+  REPOSITORY: ${{ vars.GCP_AGENT_IMAGE }}
+  WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+  DEPLOY_SA: ${{ vars.GCP_DEPLOY_SA }}
 
 jobs:
   deploy:

@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars. That file is gitignored (*.tfvars).
+#
+# Nothing sensitive belongs here. The PAT is NOT a variable — export it:
+#
+#   export GITHUB_TOKEN='...'
+#
+# A token passed through Terraform is a token written into state in plaintext.
+# docs/architecture.md §10.
+#
+# Use a FINE-GRAINED token scoped to this repository alone, with:
+#   Administration       read/write   (the ruleset)
+#   Variables            read/write   (the three Actions variables)
+#   Metadata             read         (implied)
+#
+# Classic `repo` scope would grant far more than this needs, and this token can
+# rewrite branch protection.
+
+github_owner      = "kuibinlin"
+github_repository = "mydeck"
+
+# ci.yml's job ids. deploy-agent.yml is deliberately excluded — it is
+# path-filtered, so it does not run on most pull requests, and a required check
+# that never runs blocks the merge forever.
+# required_checks = ["js", "python", "terraform"]
