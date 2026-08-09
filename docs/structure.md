@@ -175,11 +175,13 @@ services/
     └── Dockerfile              two-stage, non-root, reads $PORT
 ```
 
-**Status: deployed and answering, and nothing calls it.** `docs/architecture.md`
-§11 is the sequence, and steps 1–5 are done. `mydeck-agent-dev` runs on Cloud
-Run, a real provider has been behind the loop, and a turn came back with a tool
-call in `steps`. What has *not* happened: the Worker has no `AGENT_SERVICE_URL`,
-every flag ships off, and the JavaScript tutor still answers every learner.
+**Status: answering for one account, writes included.** `docs/architecture.md`
+§11 is the sequence, and steps 1–7 are done. `mydeck-agent-dev` runs on Cloud
+Run, the Worker calls it for the accounts in `AGENT_ALLOWED_USERS`, and a save
+it asked for reached D1 with correctly formed Chinese. Everyone else is on the
+JavaScript loop, which stays authoritative until step 8 — and step 8 needs a
+production service first, because `min_instances = 0` would hand real learners a
+23.6s cold start.
 
 Three things about it that are decisions rather than details:
 

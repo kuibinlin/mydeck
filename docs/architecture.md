@@ -1,14 +1,14 @@
 # Architecture — current state and proposed direction
 
-> **Status: §11 steps 1–5 done. `mydeck-agent-dev` is deployed and answering,
-> and nothing calls it. The JavaScript tutor is still authoritative.**
+> **Status: §11 steps 1–7 done. Python answers for one allowlisted account and
+> its writes reach D1. Everyone else is on the JavaScript tutor.**
 >
 > [structure.md](structure.md) describes what the repository *is* today. This
-> document describes where it is *going*, and most of it has now been built: the
-> contract, the tests, the Python loop, the Worker's composition path, the GCP
-> infrastructure, and a Cloud Run service with a real model behind it. What does
-> not exist is any connection between them — the Worker has no
-> `AGENT_SERVICE_URL` and every flag ships off.
+> document describes where it is *going*, and it is now mostly built and mostly
+> connected: contract, tests, Python loop, composition path, GCP infrastructure,
+> a Cloud Run service with a real model behind it, and a Worker that calls it.
+> What remains is widening the allowlist (step 8) — which needs a production
+> service first, for the cold-start reason in §8.5.
 >
 > Last revised: 2026-08-09. Every number and import claim below was measured
 > against the tree at that date; re-measure before trusting them.
@@ -615,7 +615,7 @@ and reusing one for both jobs hands CI the ability to rewrite DNS:
 **The JavaScript tutor stays live and authoritative until step 8.** Each step
 leaves the app fully working.
 
-Steps 1–5 are done. Both caveats this section used to carry are now resolved,
+Steps 1–7 are done. Both caveats this section used to carry are now resolved,
 and one of them resolved by finding a bug:
 
 - **A real provider has been behind the loop.** `aisingapore/Qwen-SEA-LION-v4-32B-IT`
@@ -669,10 +669,22 @@ and one of them resolved by finding a bug:
    then `run-dev/`, then an image built `--platform linux/amd64` and shipped
    with `gcloud run deploy`. The pipeline was the deliverable and it works;
    correctness is step 6.
-6. **Shadow mode** — the Worker calls Python alongside its own tutor, compares,
-   logs divergence, and discards the Python result. See the warning below.
-7. **Flag it on for your own account.** Python authoritative for one user, JS for
-   everyone else, instant flip back.
+6. **Shadow mode** — *done.* The Worker called Python alongside its own tutor
+   and discarded the result. Four turns, and the two implementations agreed on
+   every one — same `stoppedBy`, same tool calls, same absence of save attempts.
+   What it could not test is writes, because shadow never materialises an
+   action. It did produce the cold-start measurement (§8.5).
+7. **Flag it on for your own account** — *done.* Python authoritative for one
+   user, JS for everyone else, instant flip back. Confirmed by the write
+   landing, not by absence of errors: a turn asked to save, Cloud Run answered
+   200 in 3.2s, and two rows appeared in D1 four seconds later with correctly
+   formed Chinese — so the indices-not-characters contract (§7.2) held through a
+   real model. `ai_usage_log` rows appeared in pairs, one per model call, which
+   only happens on the remote path.
+
+   Still unproven: the `deck_name` branch, where Python asks for a *new* draft
+   deck rather than writing into one already offered. Creating a deck is the
+   more consequential half of `save_words_to_deck`.
 8. **Make Python authoritative**, JS retained as rollback.
 9. **Delete the JS agent subtree** — `services/tutor.js`, `ai/agentLoop.js`,
    `ai/toolMessages.js`, `tools/` — after the rollback window closes. **Keep
