@@ -137,14 +137,21 @@ for free: it has no shell, and `CMD` currently uses one to read `$PORT`.
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `ci.yml` | pull request, push to `main` | lint, both test suites, build, `terraform fmt`/`validate`/`plan` |
-| `deploy-api.yml` | push to `main` (paths: `backend/**`) | `npm run deploy:api` |
-| `deploy-web.yml` | push to `main` (paths: `frontend/**`) | build + `wrangler pages deploy frontend/dist` |
-| `deploy-agent.yml` | push to `main` (paths: `services/agent-service/**`) | build image, scan, push to Artifact Registry, `gcloud run deploy` |
-| `scan.yml` | weekly schedule | re-scan the deployed image tag |
+| `ci.yml` | pull request, push to `main` | lint, both test suites, build, `terraform fmt`/`validate` |
+| `deploy-api.yml` | push to `main` (paths: `backend/**`) | test, `wrangler deploy`, smoke test `/version` |
+| `deploy-agent.yml` | push to `main` (paths: `services/agent-service/**`) | build, scan, push, `gcloud run deploy` → **dev**; prod by dispatch |
+| `scan.yml` | weekly schedule | re-scan the image production is currently serving |
 
 Path filters matter here — the halves deploy to different places on different
 cadences, and a frontend copy change should not redeploy the API.
+
+**There is no `deploy-web.yml`, deliberately.** An earlier version of this table
+listed one running `wrangler pages deploy`. That would now be a second system
+deploying the frontend: Cloudflare Pages already builds `main` through its
+GitHub integration, with build command, output directory and watch paths owned
+by `infrastructure/terraform/cloudflare`. Two deployers for one artifact is the
+same collision as Terraform and Wrangler over the Worker script — whichever runs
+last wins, and neither knows about the other.
 
 Two rules from [architecture.md §9.4](../../docs/architecture.md): pull requests
 run checks only and never deploy, and Terraform applies only from a reviewed

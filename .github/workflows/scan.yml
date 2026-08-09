@@ -1,0 +1,98 @@
+# Weekly re-scan of the deployed agent image.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHY A SCHEDULE, WHEN deploy-agent.yml ALREADY SCANS
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Because a finding can become actionable without the image changing at all.
+#
+# Scanned 2026-08-09, the image carried 24 CRITICAL/HIGH findings and ZERO of
+# them had a fixed version — Debian had assessed them and declined to patch them
+# in bookworm. That is a snapshot of one vulnerability database on one day, not
+# a property of the image.
+#
+# The day Debian ships a patched perl-base, one of those 24 becomes fixable.
+# deploy-agent.yml only scans when something is deployed, so on a stable service
+# that day passes unnoticed — the build-triggered scan is exactly the one that
+# never runs when nothing changes.
+#
+# This runs against whatever is CURRENTLY serving production, not against a
+# fresh build. The question it answers is "is what we are running still clean",
+# which is different from "was it clean when we shipped it".
+
+name: scan
+
+on:
+  schedule:
+    # Monday 03:00 UTC. Weekly rather than daily: the vulnerability database
+    # moves slowly enough, and a scan nobody reads is worse than no scan.
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+env:
+  PROJECT_ID: mydeck-linsnotes
+  REGION: asia-southeast1
+  WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+  DEPLOY_SA: ${{ vars.GCP_DEPLOY_SA }}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      # Read the image from the running service rather than from a tag we guess.
+      # Terraform ignores changes to that field precisely because CI owns it, so
+      # the service is the only authority on what is actually serving.
+      - name: Find the image production is serving
+        id: image
+        run: |
+          set -euo pipefail
+          IMAGE=$(gcloud run services describe mydeck-agent-prod \
+            --region "$REGION" --project "$PROJECT_ID" \
+            --format='value(spec.template.spec.containers[0].image)')
+          echo "serving: $IMAGE"
+          echo "ref=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      # Report everything, block nothing — same split as deploy-agent.yml.
+      - name: Scan — report
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.image.outputs.ref }}
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH
+
+      - uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy.sarif
+
+      # Fails the run only when something is FIXABLE. Green today; the point is
+      # that it goes red the day Debian ships a patch or a Python dependency
+      # picks up a CVE — which is the event a build-triggered scan cannot see.
+      - name: Gate — fixable findings only
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.image.outputs.ref }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"

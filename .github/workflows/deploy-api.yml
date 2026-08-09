@@ -1,0 +1,113 @@
+# Deploy the Cloudflare Worker.
+#
+# This closes the gap that caused the incident this repository is shaped around:
+# production served ten-day-old Worker code, including a prompt defect that had
+# already been fixed and committed, because deploying was a step someone had to
+# remember. The agent service got a pipeline first; this is the half that serves
+# every user.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT THIS DEPLOYS, AND WHAT IT DOES NOT
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#   deploys      the Worker script, its bindings, vars and routes — everything
+#                in backend/wrangler.toml, because `wrangler deploy` uploads
+#                them as one unit (§9)
+#
+#   does NOT     the D1 database or the KV namespace themselves. Those are
+#                Terraform's (infrastructure/terraform/cloudflare), and this
+#                workflow only binds to them by the IDs already in
+#                wrangler.toml.
+#
+#   does NOT     secrets. `wrangler secret put` is out of band, by hand, per
+#                §10. A deploy does not touch them and cannot clear them.
+#
+#   does NOT     D1 migrations. `npm run db:migrate` stays manual on purpose —
+#                a schema change is not something to apply automatically on
+#                merge, and it needs to land before the code that depends on it
+#                rather than beside it.
+
+name: deploy-api
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/deploy-api.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never two deploys of one Worker at once. Not cancel-in-progress: a half-done
+# deploy is worse than a queued one.
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # ci.yml already ran these on the pull request. Running them again here is
+      # deliberate: a push to main can arrive without a PR — the ruleset lets a
+      # repository admin bypass — and this is the last point before real users
+      # get the code.
+      - run: npm run test:api
+
+      # ─────────────────────────────────────────────────────────────────────
+      # APP_VERSION is injected here and is NOT in wrangler.toml.
+      #
+      # meta.js says why: a version committed to a config file is stale the
+      # first time someone forgets to bump it. Injected from the commit that
+      # produced the build, it is accurate by construction — and it is what
+      # makes the smoke test below able to tell a successful deploy from a
+      # silent rollback.
+      #
+      # Unset, /version reports "development", which is how a laptop is told
+      # apart from production.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: Deploy
+        id: deploy
+        working-directory: backend
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse --short HEAD)
+          npx wrangler deploy --var APP_VERSION:"$SHA"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      # /health answers 200 from the PREVIOUS deploy just as happily as from the
+      # new one, so it cannot distinguish success from a silent rollback. Only
+      # /version can, and only because APP_VERSION was injected above.
+      #
+      # This is the assertion .github/workflows/README.md argues for, and the
+      # reason meta.js keeps APP_VERSION out of committed config.
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          API=https://mydeckapi.linsnotes.com
+
+          test "$(curl -fsS "$API/health" | jq -r .status)" = "ok"
+
+          SERVING=$(curl -fsS "$API/version" | jq -r .version)
+          echo "expected: ${{ steps.deploy.outputs.sha }}"
+          echo "serving:  $SERVING"
+          test "$SERVING" = "${{ steps.deploy.outputs.sha }}"
+
+          echo "✅ mydeckapi.linsnotes.com is serving ${{ steps.deploy.outputs.sha }}"
