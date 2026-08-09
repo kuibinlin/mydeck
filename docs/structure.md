@@ -7,8 +7,8 @@ mydeck/
 ├── frontend/          React 19 + Vite SPA          → Cloudflare Pages
 ├── backend/           Cloudflare Worker (API)      → Cloudflare Workers
 ├── services/          Python containers            → Google Cloud Run
-├── infrastructure/    Terraform (not wired up yet)
-├── .github/           CI/CD workflows (empty)
+├── infrastructure/    Terraform — GCP applied; Cloudflare/GitHub not written
+├── .github/           CI/CD — ci.yml (checks only); no deploy workflow yet
 ├── docs/              you are here
 └── <root>             workspace manifest + repo-wide config
 ```
@@ -169,7 +169,7 @@ services/
     │   ├── hsk/                MCP transport + hard projection
     │   └── agent/              prompt, tools, per-turn state, run
     ├── tests/                  pytest — contract, loop, guards, dictionary, safety
-    ├── pyproject.toml          deps + ruff/mypy/pytest config
+    ├── pyproject.toml          deps + ruff/pyright/pytest config
     ├── uv.lock                 committed; the Dockerfile builds --frozen
     ├── .python-version         3.12, matching the image
     └── Dockerfile              two-stage, non-root, reads $PORT
