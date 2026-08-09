@@ -788,6 +788,29 @@ setting, verifying and rotating every secret across all three stores.
   keeping that, or Cloudflare → Google external load balancer → Cloud Run with
   `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER` and the default `run.app` URL
   disabled. The second is the stronger answer; decide before step 8, not during.
+- **Turn latency against the model provider, and whether it gates step 8.**
+  Measured 2026-08-09 on a *warm* prod container: one lookup turn took **29.8s**
+  and hit the 20s deadline, returning `stopped_by: "step_limit"` and an empty
+  message — where dev's comparable turns run 3–6s. Through the Worker that turn
+  produces nothing: `AGENT_SERVICE_TIMEOUT_MS` fires at 25s, a timeout is
+  rethrown, and `routes/zh.js` degrades to the cards.
+
+  Not diagnosed. `usage.model_calls` was 1, so the second call never completed,
+  and the 20s covers model call 1 plus the `hsk_lookup` round trip — which from
+  Cloud Run goes to the *public* `hsk-mcp.linsnotes.com` (no service binding
+  available there), rate limited 30/min per IP with `HSK_TIMEOUT_S` at 8s. So a
+  slow dictionary hop and a slow model are both plausible and they are
+  distinguishable: compare a turn that uses no tool against one that does.
+
+  Also unexplained: the deadline fired at 20s but the request ran 29.8s. The
+  deadline exists so the container does not work past the Worker's patience, and
+  a 50% overshoot means it is not doing that as tightly as `run.py` describes.
+
+  **This gates step 8, not the structure.** At step 7 the blast radius is one
+  allowlisted account and the JavaScript loop still answers everyone else.
+  Raising `AGENT_SERVICE_TIMEOUT_MS` is not the lever — §2's 30s Workers ceiling
+  leaves no room.
+
 - **Rotating `AGENT_SERVICE_SECRET` without a 401 window.** `run-dev/` leaves
   `secret_versions` empty, so mounts resolve to `latest` — and env-var secrets
   resolve at *instance* start, so mid-rotation the same revision can hold two
