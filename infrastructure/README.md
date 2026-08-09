@@ -15,7 +15,8 @@ infrastructure/
     ├── secrets-prod/       │ thin roots: a backend prefix, a module call,
     ├── run-dev/            │ and one environment's values
     ├── run-prod/           ┘
-    └── cloudflare/         D1, KV, Pages and two DNS records — all adopted
+    ├── cloudflare/         D1, KV, Pages and two DNS records — all adopted
+    └── github/             branch ruleset + the variables CI reads
 ```
 
 `modules/` holds every resource and all the reasoning. The roots hold a state
@@ -31,19 +32,33 @@ It is created first and destroyed last.
 ## Current state
 
 **Every root written so far is applied** — `bootstrap/`, `artifact-registry/`,
-`iam/`, both environments of `secrets-` and `run-`, and `cloudflare/`.
+`iam/`, both environments of `secrets-` and `run-`, `cloudflare/` and `github/`.
 `mydeck-agent-prod` serves the Worker warm at `min_instances = 1`;
 `mydeck-agent-dev` is idle and kept as the target for local `wrangler dev` and
 for images not yet trusted.
 
-Not written yet: `observability/`, `github/`.
+Not written yet: `observability/` — the only one left.
 
 `run-dev/` cannot even *plan* until `secrets-dev/` is applied — it reads that
 module's state, and a state object that does not exist is a hard error rather
 than an empty map.
 
-Two of the three Terraform lifecycles are done: **create** on GCP, **adopt** on
-Cloudflare. Only **govern** — `github/` — is left (§9.1).
+**All three Terraform lifecycles are done** (§9.1): **create** on GCP, **adopt**
+on Cloudflare, **govern/connect** on GitHub. Each is a different discipline
+rather than three provider blocks — creating what never existed, taking over
+what already ran, and configuring what surrounds both.
+
+`github/` is also what joins them. It reads `iam/` and `artifact-registry/`
+outputs through remote state and publishes them as Actions variables, so
+`deploy-agent.yml` reads a WIF provider path and an image URI that no human
+typed:
+
+```text
+iam/ + artifact-registry/  →  github/  →  Actions variables  →  deploy-agent.yml
+```
+
+Not automatic: `terraform apply` in `github/` is what refreshes them. Still one
+command rather than remembering which file holds a copy.
 
 What remains outside Terraform, and mostly on purpose:
 
@@ -56,7 +71,7 @@ What remains outside Terraform, and mostly on purpose:
 | KV namespace       | **Terraform** — adopted        | `cloudflare/main.tf`    | done             |
 | DNS (2 records)    | **Terraform** — `cloudflare/`  | `cloudflare/dns.tf`     | done             |
 | Pages site         | **Terraform** — `cloudflare/`  | `cloudflare/main.tf`    | done, see below  |
-| Repo governance    | GitHub dashboard               | dashboard only          | yes              |
+| Repo governance    | **Terraform** — `github/`      | `github/main.tf`        | done             |
 
 ### Cloudflare: what Terraform owns, and what is still dashboard-only
 
