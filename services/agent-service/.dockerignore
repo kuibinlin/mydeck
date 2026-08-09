@@ -1,0 +1,22 @@
+# The build context is this directory. Keep out anything that is not the app or
+# its lockfile — every entry here is either noise in a layer or something that
+# must never reach an image.
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+tests/
+
+# Secrets arrive from Secret Manager at runtime. Nothing resembling a local
+# environment file gets baked in.
+.env
+.env.*
+*.local
+
+README.md
+Dockerfile
+.dockerignore

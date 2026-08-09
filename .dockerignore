@@ -1,0 +1,55 @@
+# Nothing in this repo is containerised yet — the frontend deploys to Cloudflare
+# Pages and the backend to Cloudflare Workers, neither of which uses Docker.
+# This file exists ahead of that move so the first `docker build` does not
+# quietly ship secrets or a 300MB node_modules into an Artifact Registry image.
+#
+# Keep it in sync with .gitignore: anything secret there must be secret here too.
+# They are NOT the same file — .gitignore excludes build output that a Docker
+# build may legitimately need, and .dockerignore excludes tracked files (docs,
+# terraform, CI) that an image has no use for.
+
+# ── dependencies: reinstalled inside the image from the lockfile ──────────────
+node_modules
+**/node_modules
+
+# ── build output: produced inside the image, never copied in ─────────────────
+dist
+**/dist
+dist-ssr
+
+# ── secrets: the whole reason this file exists ───────────────────────────────
+.env
+.env.*
+!.env.example
+backend/.dev.vars
+backend/wrangler.toml
+service-account*.json
+credentials*.json
+*.pem
+*.key
+
+# ── local state and caches ───────────────────────────────────────────────────
+backend/.wrangler
+**/.terraform
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.log
+.DS_Store
+
+# ── repo metadata: large, and changes on every commit, so it would bust the
+#    layer cache for no benefit ───────────────────────────────────────────────
+.git
+.github
+.gitignore
+
+# ── not part of any runtime image ────────────────────────────────────────────
+docs
+infrastructure
+notes
+data
+README.md
+LICENSE
+CLAUDE.md
+.claude
+eslint.config.js

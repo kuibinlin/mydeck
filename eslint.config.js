@@ -6,8 +6,11 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  // `.wrangler` holds generated dev-server bundles, not source.
-  globalIgnores(['dist', '**/.wrangler']),
+  // Repo-wide config: `eslint .` from the root lints both workspaces.
+  // Patterns are globbed from here, so they need `**/` to reach into
+  // frontend/ and backend/. `.wrangler` holds generated dev-server bundles,
+  // not source; `.terraform` is provider plugins vendored by `terraform init`.
+  globalIgnores(['**/dist', '**/.wrangler', '**/.terraform']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

@@ -1,0 +1,53 @@
+### Test-only Wrangler config.
+###
+### Deliberately separate from ../wrangler.toml for two reasons:
+###   1. Wrangler loads `.dev.vars` from the directory holding the config file.
+###      Living in test/ means ../.dev.vars (which holds REAL secrets) is never
+###      loaded, so tests cannot authenticate against real third-party APIs.
+###   2. No [ai] binding — Workers AI always reaches remote infrastructure and
+###      would incur charges. Tests must never invoke it.
+###
+### Outbound fetch is additionally blocked at the Miniflare level in
+### vitest.config.mjs; this file is the second layer of that defence.
+
+name = "linsnotes-api-test"
+main = "../src/index.js"
+compatibility_date = "2026-03-24"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "linsnotes-db-test"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "test-sessions"
+
+[vars]
+FRONTEND_URL = "http://localhost:5173"
+FROM_EMAIL = "noreply@test.invalid"
+ADMIN_EMAILS = "kuibin.dev@gmail.com"
+AI_MAX_RETRIES = "3"
+AI_DAILY_LIMIT_FREE = "3"
+MAX_CARDS_PER_DECK = "50"
+MAX_QUESTIONS_PER_DECK = "50"
+AI_DEFAULT_PROVIDER = "cloudflare"
+
+# The Python agent service. Off, which is also the shipping default — every
+# existing test runs the JavaScript tutor unchanged, and the composition tests
+# turn these on per call with a synthetic env.
+#
+# The host is `agent.test.invalid` because that is what vitest.config.mjs
+# answers; anything else falls to the default-deny 503 that safety.test.js pins.
+# `.invalid` is the reserved TLD for exactly this (RFC 2606).
+AGENT_ENABLED = "false"
+AGENT_SHADOW = "false"
+AGENT_ALLOWED_USERS = ""
+AGENT_SERVICE_URL = "https://agent.test.invalid"
+AGENT_SERVICE_TIMEOUT_MS = "10000"
+
+# Obvious dummies — never valid against a real service.
+RESEND_API_KEY = "test-resend-key"
+GITHUB_CLIENT_ID = "test-client-id"
+GITHUB_CLIENT_SECRET = "test-client-secret"
+AGENT_SERVICE_SECRET = "test-agent-secret"

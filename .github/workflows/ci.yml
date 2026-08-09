@@ -1,0 +1,171 @@
+# Checks only. This workflow deploys nothing and needs no credentials.
+#
+# That is a property worth keeping rather than an accident: both test suites are
+# offline by construction — backend/test/wrangler.test.toml plus the
+# outboundService interceptor for the Worker, an autouse fixture pinning a
+# scripted provider for Python — and safety.test.js / test_safety.py assert those
+# guards are in place. So nothing here can reach Cloudflare, Google or a model
+# provider, and no secret needs to exist for it to run.
+#
+# See .github/workflows/README.md for why each step is shaped the way it is.
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Only the contents of the repository. No id-token, no packages, no write.
+# deploy-agent.yml is where `id-token: write` belongs.
+permissions:
+  contents: read
+
+# A new push to the same branch makes the previous run irrelevant. Cancelling it
+# frees a runner rather than racing to a result nobody reads. main is excluded
+# by the group key including the ref, so pushes to main queue instead.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # JavaScript — frontend and Worker
+  # ───────────────────────────────────────────────────────────────────────────
+  js:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Version comes from .nvmrc (v24.14.1) so it is pinned in one place.
+      # Hardcoding it here would be the second place, and the two would drift.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # `npm ci`, never `npm install`. There is ONE lockfile at the repo root
+      # covering both workspaces, and ci is what respects it exactly.
+      #
+      # If this step warns about blocked install scripts, the fix is in the root
+      # package.json: `allowScripts` approves workerd, esbuild and fsevents by
+      # EXACT version, so bumping any of them needs the new version key added.
+      # The symptom is not this step failing — it is test:api failing later,
+      # because workerd's postinstall never ran and the runtime cannot boot.
+      - run: npm ci
+
+      # Deliberately separate steps rather than `npm run check`.
+      #
+      # These fail for unrelated reasons, and a combined script stops at the
+      # first one — so a lint error would hide whether the tests also broke.
+      # Separate steps report all of it in one run.
+      - run: npm run lint
+
+      - run: npm run test:web
+
+      # The slow one: boots workerd with local D1 and KV. ~29 files, 416 tests.
+      - run: npm run test:api
+
+      - run: npm run build
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Python — the agent service
+  # ───────────────────────────────────────────────────────────────────────────
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      # Every `uv run` below refuses to re-resolve. Without this, a pyproject.toml
+      # that drifted from uv.lock would be silently re-locked in CI and pass —
+      # while the Dockerfile builds with `--frozen` and fails. Same flag, same
+      # reason: an image whose dependencies drifted is not the thing that was
+      # tested.
+      UV_FROZEN: "1"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: services/agent-service/uv.lock
+
+      # These three mirror the lint:agent / typecheck:agent / test:agent scripts
+      # in the root package.json, which remain the source of truth — if they ever
+      # disagree, the npm scripts win.
+      #
+      # Called directly rather than through npm because the JS install is two
+      # workspaces of node_modules, and pulling all of it in to shell out to uv
+      # would add minutes to a job that needs none of it. The `:agent` scripts
+      # are deliberately not part of `npm test` for the mirror-image reason: a
+      # clone that has never heard of Python must still run the JS suites.
+      - run: uv run --directory services/agent-service ruff check .
+
+      - run: uv run --directory services/agent-service pyright app
+
+      # Includes test_prompt_parity.py, which reads backend/src/services/tutor.js
+      # as text and fails if the two system prompts have diverged. It depends on
+      # the monorepo layout, so it needs the full checkout above — not a sparse
+      # one limited to services/.
+      - run: uv run --directory services/agent-service pytest -q
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Terraform — every root module
+  # ───────────────────────────────────────────────────────────────────────────
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          # Matches `required_version = "~> 1.15"` in every module's versions.tf.
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+
+      - name: fmt
+        run: terraform fmt -check -recursive -diff infrastructure/
+
+      # -backend=false is what makes this credential-free: it downloads the
+      # providers needed to typecheck the configuration without ever contacting
+      # the GCS state bucket. `terraform validate` cannot run without an init,
+      # and an init with a backend would need Google credentials.
+      #
+      # Modules are discovered rather than listed, so cloudflare/, github/ and
+      # any -prod root are covered the day they exist, with nobody having to
+      # remember this file.
+      - name: validate
+        run: |
+          set -euo pipefail
+          for dir in infrastructure/terraform/*/; do
+            [ -n "$(find "$dir" -maxdepth 1 -name '*.tf' -print -quit)" ] || continue
+            echo "::group::$dir"
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+            echo "::endgroup::"
+          done
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Deliberately NOT here
+#
+# `terraform plan` — architecture.md §9.4 wants plan on pull requests, and it is
+#   missing because the credential to run it does not exist yet. A plan reads
+#   real state, so it needs Google auth; the only federated identity today is
+#   mydeck-deploy, whose IAM binding pins it to refs/heads/main precisely so a
+#   pull request cannot deploy. Reusing it here would hand PR branches the
+#   account that ships revisions and undo that split. The fix is a read-only
+#   plan identity in iam/ — Viewer plus state-bucket read, impersonable from any
+#   ref of this repository — not a widening of the deploy one.
+#
+# The image build and trivy scan — README.md puts those in deploy-agent.yml.
+#   Building the agent image is the slowest thing in the repository, and running
+#   it on every pull request would dominate the feedback loop. Worth revisiting
+#   if a broken Dockerfile ever reaches main.
+#
+# Any deploy — §9.4: pull requests run checks only, never deploys.
+# ─────────────────────────────────────────────────────────────────────────────

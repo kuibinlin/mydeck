@@ -41,9 +41,41 @@ data/
 # by a script and both are bundled: hsk-core.json IS the offline dictionary tier
 # the tutor falls back to, and without it the Worker does not build. A fresh
 # clone must have them.
-!worker/src/services/zh/data/
-!src/features/chinese/data/
+!backend/src/services/zh/data/
+!frontend/src/features/chinese/data/
 
 # generated sql seed files
 sql-flashcards-*.sql
 sql-challenges-*.sql
+
+# terraform (infrastructure/)
+# .terraform.lock.hcl is deliberately NOT here — it pins provider versions and
+# belongs in the repo, the same way package-lock.json does.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# tfvars contain environment-specific values and may contain sensitive data.
+# Commit example files instead.
+*.tfvars
+*.auto.tfvars
+!*.tfvars.example
+
+# python (services/agent-service)
+# uv.lock is deliberately NOT here — it is the single source of truth for what
+# the container installs, and the Dockerfile builds with --frozen against it.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# cloud credentials — never commit
+service-account*.json
+credentials*.json
+*.pem
+*.key

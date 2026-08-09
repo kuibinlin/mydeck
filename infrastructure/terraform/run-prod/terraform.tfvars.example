@@ -1,0 +1,59 @@
+# Copy this file to terraform.tfvars before applying this module.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+
+
+project_id = "mydeck-linsnotes"
+
+# Must match the region secrets-prod/ replicates to. A Cloud Run service cannot
+# mount a secret replicated only to another region.
+region = "asia-southeast1"
+
+# This root owns production. Requires mydeck-agent-prod-runtime in iam/ and an
+# applied secrets-prod/ — both are checked at plan time with errors naming the
+# fix.
+environment = "prod"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Model
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Start identical to dev. Promoting a model is the same discipline as promoting
+# an image: prove it on dev, then move the exact value across. Changing the
+# model here while also switching traffic to a new service means two variables
+# at once and no way to attribute a regression.
+ai_model    = "aisingapore/Qwen-SEA-LION-v4-32B-IT"
+ai_provider = "openai"
+ai_base_url = "https://api.sea-lion.ai"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Capacity — the environment difference
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 1, not 0. A cold start measured 23.6s against the Worker's 25s timeout, and a
+# timeout costs the learner the tutor prose entirely. This is the first
+# continuously billed resource in the project — price it before applying.
+min_instances = 1
+
+# 2 × concurrency 10 = 20 simultaneous turns. A cost guard rather than a
+# capacity plan; raise it when there is evidence of contention, not before.
+max_instances = 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Secret versions
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Pinned in production. Env-var secrets resolve at INSTANCE start, so under
+# "latest" a rotation leaves instances of one revision holding different values
+# until the old ones recycle. Pinning makes rotation deliberate and rollback a
+# revert of this map.
+#
+# Both secrets are at version 1 after their first `gcloud secrets versions add`.
+# Bump the number here when you rotate, and apply.
+secret_versions = {
+  "service-secret" = "1"
+  "ai-api-key"     = "1"
+}

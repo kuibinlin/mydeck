@@ -1,0 +1,26 @@
+# Copy to terraform.tfvars. That file is gitignored because tfvars contain
+# environment-specific values and may contain sensitive data.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+
+# The Google Cloud project that owns the MyDeck infrastructure.
+# bootstrap/ must have run against this project first — it enables
+# artifactregistry.googleapis.com and creates the state bucket this module
+# writes to.
+project_id = "mydeck-linsnotes"
+
+# Default Google Cloud region. Also the repository's location, and therefore
+# one segment of every image path — see the contract in registry.tf.
+region = "asia-southeast1"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cleanup policy. The defaults in variables.tf are deliberate; override only
+# with a reason.
+#
+# cleanup_dry_run is the one that matters. Leave it true until the cleanup logs
+# have shown you what the policy actually matches. Setting it false ARMS
+# deletion of image versions, and `terraform output cleanup_armed` will say so.
+# ─────────────────────────────────────────────────────────────────────────────
+# cleanup_dry_run                = true
+# cleanup_keep_recent_count      = 20
+# cleanup_delete_older_than_days = 30

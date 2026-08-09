@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars. This file is gitignored because tfvars contain
+# environment-specific values and may contain sensitive data.
+#
+# cp terraform.tfvars.example terraform.tfvars
+
+# The Google Cloud project that owns the MyDeck infrastructure.
+#
+# It must already exist before running this bootstrap.
+project_id = "mydeck"
+
+# Default Google Cloud region.
+region = "asia-southeast1"

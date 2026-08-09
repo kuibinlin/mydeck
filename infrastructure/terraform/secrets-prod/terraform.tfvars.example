@@ -1,0 +1,43 @@
+# Copy this file to terraform.tfvars before applying this module.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# Nothing sensitive belongs here. This module creates secret CONTAINERS and
+# never their values — docs/architecture.md §10.
+
+
+project_id = "mydeck-linsnotes"
+
+# Must match the region run-prod/ deploys to. A Cloud Run service cannot mount a
+# secret replicated only to another region.
+region = "asia-southeast1"
+
+# This root owns production, and nothing else. The runtime identity it grants to
+# — mydeck-agent-prod-runtime — must already exist in iam/'s environments, which
+# is checked at plan time with an error naming the fix.
+environment = "prod"
+
+# Off. Turn on only in the same change that sets both Langfuse values: an empty
+# secret cannot be mounted, so creating the containers early plants a deploy
+# failure in run-prod/.
+enable_tracing = false
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# After applying, before run-prod/
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#   terraform output -raw set_values     then run what it prints, one at a time
+#   terraform output -raw unset_check    both secrets must report 1
+#
+# AGENT_SERVICE_SECRET must be a NEW value, not dev's:
+#
+#   openssl rand -hex 32
+#
+# and the same new value goes into the Worker with `wrangler secret put` when
+# AGENT_SERVICE_URL is pointed at prod. Generate once, set twice, per
+# docs/secrets.md.
+#
+# AI_API_KEY can be the same provider key as dev, or a separate one if you want
+# per-environment usage attribution from the provider.
+# ─────────────────────────────────────────────────────────────────────────────
