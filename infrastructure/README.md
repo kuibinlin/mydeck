@@ -14,7 +14,8 @@ infrastructure/
     ├── secrets-dev/        ┐
     ├── secrets-prod/       │ thin roots: a backend prefix, a module call,
     ├── run-dev/            │ and one environment's values
-    └── run-prod/           ┘
+    ├── run-prod/           ┘
+    └── cloudflare/         D1, KV, Pages and two DNS records — all adopted
 ```
 
 `modules/` holds every resource and all the reasoning. The roots hold a state
@@ -30,42 +31,90 @@ It is created first and destroyed last.
 ## Current state
 
 **Every root written so far is applied** — `bootstrap/`, `artifact-registry/`,
-`iam/`, and both environments of `secrets-` and `run-`. `mydeck-agent-prod`
-serves the Worker warm at `min_instances = 1`; `mydeck-agent-dev` is idle and
-kept as the target for local `wrangler dev` and for images not yet trusted.
+`iam/`, both environments of `secrets-` and `run-`, and `cloudflare/`.
+`mydeck-agent-prod` serves the Worker warm at `min_instances = 1`;
+`mydeck-agent-dev` is idle and kept as the target for local `wrangler dev` and
+for images not yet trusted.
 
-Not written yet: `observability/`, `cloudflare/`, `github/`.
+Not written yet: `observability/`, `github/`.
 
 `run-dev/` cannot even *plan* until `secrets-dev/` is applied — it reads that
 module's state, and a state object that does not exist is a hard error rather
 than an empty map.
 
-The remaining infrastructure is still managed outside Terraform:
+Two of the three Terraform lifecycles are done: **create** on GCP, **adopt** on
+Cloudflare. Only **govern** — `github/` — is left (§9.1).
 
-| Resource           | Provisioned by                 | Config lives in         | Terraform later? |
+What remains outside Terraform, and mostly on purpose:
+
+| Resource           | Provisioned by                 | Config lives in         | Terraform?       |
 | ------------------ | ------------------------------ | ----------------------- | ---------------- |
 | Worker (API)       | `npm run deploy:api`           | `backend/wrangler.toml` | **no** — see below |
 | Workers AI binding | `[ai]` block                   | `backend/wrangler.toml` | **no** — part of the script |
 | Cloudflare secrets | `wrangler secret put`          | Cloudflare              | **no** — §10     |
-| D1 database        | `wrangler d1 create`           | `backend/wrangler.toml` | yes, by import   |
-| KV namespace       | `wrangler kv namespace create` | `backend/wrangler.toml` | yes, by import   |
-| DNS / zone         | Cloudflare dashboard           | dashboard only          | yes              |
-| Pages site         | Cloudflare dashboard           | dashboard only — settings below | yes              |
+| D1 database        | **Terraform** — adopted        | `cloudflare/main.tf`    | done             |
+| KV namespace       | **Terraform** — adopted        | `cloudflare/main.tf`    | done             |
+| DNS (2 records)    | **Terraform** — `cloudflare/`  | `cloudflare/dns.tf`     | done             |
+| Pages site         | **Terraform** — `cloudflare/`  | `cloudflare/main.tf`    | done, see below  |
 | Repo governance    | GitHub dashboard               | dashboard only          | yes              |
 
-### The Pages settings that exist nowhere but a dashboard
+### Cloudflare: what Terraform owns, and what is still dashboard-only
 
-`cloudflare_pages_project` is not written yet, so these are recorded here — a
-rebuild has no other source for them, and the first two have already broken once
-each:
+`cloudflare/` adopts five resources. Everything below is now in Git and shows as
+a plan diff if it changes — which it did not used to. The Pages build broke on
+the repository restructure because `destination_dir` still said `dist` while the
+artifact had moved to `frontend/dist`, and nothing in the repo could be checked
+against.
 
-| Setting | Value | Why |
-| ------- | ----- | --- |
-| Root directory | `/` | npm workspaces resolve from the repo root |
-| Build command | `npm run build` | delegates to the `frontend` workspace |
-| Build output directory | `frontend/dist` | **not** `dist` — this broke when the repo was restructured |
-| Preview deployments | **None** | see below |
-| `VITE_API_URL` | `https://mydeckapi.linsnotes.com` | baked at build time, not read at runtime |
+| Setting | Value | Owner |
+| ------- | ----- | ----- |
+| Build command | `npm run build` | **Terraform** |
+| Build output directory | `frontend/dist` | **Terraform** |
+| Root directory | `""` (repo root — npm workspaces resolve from there) | **Terraform** |
+| Build watch paths | all, minus `backend/*` `services/*` `infrastructure/*` `docs/*` `.github/*` | **Terraform** |
+| Preview deployments | none — see below | **Terraform** |
+| GitHub connection | `kuibinlin/mydeck`, production branch `main` | **Terraform** |
+| `VITE_API_URL`, `NODE_VERSION` | — | dashboard |
+
+`deployment_configs` is deliberately undeclared. It is a large nested structure
+covering production and preview, and declaring it partially proposes removing
+whatever is left out — which is how the `source` block nearly deleted the GitHub
+connection on the first plan. The two env vars in it are tracked in state, so
+they are recoverable; they are simply not enforced.
+
+**One resource never plans clean**, and it is a provider defect rather than
+drift: `cloudflare_pages_project` reports four optional-and-computed attributes
+as unknown on every plan (`build_config.build_caching`, the two
+`web_analytics_*`, and `source.config.preview_branch_excludes`). Applying writes
+nothing. Declaring them is not an option — `preview_branch_excludes = []` failed
+an apply outright, because the API normalises empty to null and the provider
+cannot reconcile it. `ignore_changes` does not help either; it suppresses
+config-versus-state differences, and this is the provider returning unknown.
+Reading a plan for that resource means ignoring those four names; anything else
+is real.
+
+### DNS: two records out of eighteen
+
+`cloudflare/dns.tf` adopts `mydeckapi.linsnotes.com` and `mydeck.linsnotes.com`
+and nothing else. Terraform manages one record per resource, so the other
+sixteen are invisible to it — no drift, no plan, no deletion.
+
+That narrowness is the point: an adopted record is a record an edit can delete.
+Email (four MX, Brevo and Resend DKIM, SES SPF, DMARC), site verification, the
+apex and `www` — all left alone, all unrelated to this app, all working.
+
+`hsk-mcp.linsnotes.com` is left alone too, and that one is worth stating because
+the argument for adopting it is tempting. MyDeck depends on it, and from Cloud
+Run that hostname *is* the dictionary. But depending on a service is not owning
+it — by that reasoning this module would manage SEA-LION's DNS. It is a
+standalone service, and adopting it here would mean two Terraform states
+believing they own one record the day it gets its own.
+
+The two that are adopted carry `prevent_destroy`, and together they express
+something that previously existed only as a code comment: the session cookie is
+`SameSite=Lax`, which is viable **only because** the frontend and the API share
+the `linsnotes.com` eTLD+1. Moving the API to a different registrable domain
+breaks login on iOS Safari, and nothing in the application code would say why.
 
 Preview deployments are off because a preview of this app **cannot log in**, for
 two independent reasons:
@@ -73,13 +122,11 @@ two independent reasons:
 - `backend/src/config.js` reflects only `linsnotes.com` and
   `mydeck.linsnotes.com` in `Access-Control-Allow-Origin`, so every API call
   from a `*.pages.dev` origin is blocked before it is sent.
-- The session cookie is `SameSite=Lax`, which works *because* the frontend and
-  API share the `linsnotes.com` eTLD+1 — the deliberate fix for iOS Safari ITP
-  (`http/session.js`). A `pages.dev` origin is a different site, so the cookie
-  is never sent.
+- The same `SameSite=Lax` cookie needs the shared eTLD+1. A `pages.dev` origin
+  is a different site, so the cookie is never sent.
 
 Loosening `PROD_ORIGINS` to a wildcard would not rescue it either: the same list
-is what constrains login redirect targets, so widening it for previews weakens a
+constrains login redirect targets, so widening it for previews weakens a
 production check. And `ci.yml` already builds the frontend, so a preview was a
 second build of the same artifact minus the ability to use it.
 
