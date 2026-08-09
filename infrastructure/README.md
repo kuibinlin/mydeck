@@ -8,9 +8,19 @@ infrastructure/
     ├── bootstrap/          Terraform state bucket + project-wide APIs
     ├── artifact-registry/  container images for the agent service
     ├── iam/                WIF federation + deploy and runtime identities
-    ├── secrets-dev/        Secret Manager containers for dev
-    └── run-dev/            the agent service on Cloud Run, dev
+    ├── modules/
+    │   ├── secrets/        shared: Secret Manager containers + access
+    │   └── run/            shared: the Cloud Run service + its IAM
+    ├── secrets-dev/        ┐
+    ├── secrets-prod/       │ thin roots: a backend prefix, a module call,
+    ├── run-dev/            │ and one environment's values
+    └── run-prod/           ┘
 ```
+
+`modules/` holds every resource and all the reasoning. The roots hold a state
+prefix each, which is what makes an apply in `secrets-dev/` incapable of
+touching production — directory names are documentation, the state boundary is
+the enforcement.
 
 The bootstrap module is the foundation for the rest of the Terraform
 infrastructure.
@@ -19,13 +29,12 @@ It is created first and destroyed last.
 
 ## Current state
 
-**Every module written so far is applied** — `bootstrap/`, `artifact-registry/`,
-`iam/`, `secrets-dev/`, `run-dev/`. `mydeck-agent-dev` serves on Cloud Run, its
-secrets are populated, and CI's permission chain has been exercised for real by
-a `gcloud run deploy`.
+**Every root written so far is applied** — `bootstrap/`, `artifact-registry/`,
+`iam/`, and both environments of `secrets-` and `run-`. `mydeck-agent-prod`
+serves the Worker warm at `min_instances = 1`; `mydeck-agent-dev` is idle and
+kept as the target for local `wrangler dev` and for images not yet trusted.
 
-Not written yet: `observability/`, `cloudflare/`, `github/`, and any `-prod`
-root.
+Not written yet: `observability/`, `cloudflare/`, `github/`.
 
 `run-dev/` cannot even *plan* until `secrets-dev/` is applied — it reads that
 module's state, and a state object that does not exist is a hard error rather
@@ -41,8 +50,38 @@ The remaining infrastructure is still managed outside Terraform:
 | D1 database        | `wrangler d1 create`           | `backend/wrangler.toml` | yes, by import   |
 | KV namespace       | `wrangler kv namespace create` | `backend/wrangler.toml` | yes, by import   |
 | DNS / zone         | Cloudflare dashboard           | dashboard only          | yes              |
-| Pages site         | Cloudflare dashboard           | dashboard only          | yes              |
+| Pages site         | Cloudflare dashboard           | dashboard only — settings below | yes              |
 | Repo governance    | GitHub dashboard               | dashboard only          | yes              |
+
+### The Pages settings that exist nowhere but a dashboard
+
+`cloudflare_pages_project` is not written yet, so these are recorded here — a
+rebuild has no other source for them, and the first two have already broken once
+each:
+
+| Setting | Value | Why |
+| ------- | ----- | --- |
+| Root directory | `/` | npm workspaces resolve from the repo root |
+| Build command | `npm run build` | delegates to the `frontend` workspace |
+| Build output directory | `frontend/dist` | **not** `dist` — this broke when the repo was restructured |
+| Preview deployments | **None** | see below |
+| `VITE_API_URL` | `https://mydeckapi.linsnotes.com` | baked at build time, not read at runtime |
+
+Preview deployments are off because a preview of this app **cannot log in**, for
+two independent reasons:
+
+- `backend/src/config.js` reflects only `linsnotes.com` and
+  `mydeck.linsnotes.com` in `Access-Control-Allow-Origin`, so every API call
+  from a `*.pages.dev` origin is blocked before it is sent.
+- The session cookie is `SameSite=Lax`, which works *because* the frontend and
+  API share the `linsnotes.com` eTLD+1 — the deliberate fix for iOS Safari ITP
+  (`http/session.js`). A `pages.dev` origin is a different site, so the cookie
+  is never sent.
+
+Loosening `PROD_ORIGINS` to a wildcard would not rescue it either: the same list
+is what constrains login redirect targets, so widening it for previews weakens a
+production check. And `ci.yml` already builds the frontend, so a preview was a
+second build of the same artifact minus the ability to use it.
 
 ## What Terraform owns
 
@@ -56,9 +95,9 @@ artifact-registry/   google
     ↓
 iam/                 google
     ↓
-secrets-dev/         google       ← one root per environment
+secrets-<env>/       google       ← one root per environment
     ↓
-run-dev/             google
+run-<env>/           google
     ↓
 observability/       google
 
