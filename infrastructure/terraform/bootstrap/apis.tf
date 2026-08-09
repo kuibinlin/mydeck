@@ -16,6 +16,11 @@ locals {
     "sts.googleapis.com",
     "logging.googleapis.com",
     "monitoring.googleapis.com",
+
+    # Budget alerts. Enabled here rather than anywhere else because bootstrap is
+    # the only root that owns project-wide settings, and the budget it guards
+    # covers every other module's spend.
+    "billingbudgets.googleapis.com",
   ]
 }
 

@@ -5,7 +5,7 @@ Infrastructure as code.
 ```text
 infrastructure/
 └── terraform/
-    ├── bootstrap/          Terraform state bucket + project-wide APIs
+    ├── bootstrap/          state bucket, project-wide APIs, budget alert
     ├── artifact-registry/  container images for the agent service
     ├── iam/                WIF federation + deploy and runtime identities
     ├── modules/
@@ -16,7 +16,8 @@ infrastructure/
     ├── run-dev/            │ and one environment's values
     ├── run-prod/           ┘
     ├── cloudflare/         D1, KV, Pages and two DNS records — all adopted
-    └── github/             branch ruleset + the variables CI reads
+    ├── github/             branch ruleset + the variables CI reads
+    └── observability/      three alerts on the prod agent service
 ```
 
 `modules/` holds every resource and all the reasoning. The roots hold a state
@@ -31,13 +32,13 @@ It is created first and destroyed last.
 
 ## Current state
 
-**Every root written so far is applied** — `bootstrap/`, `artifact-registry/`,
-`iam/`, both environments of `secrets-` and `run-`, `cloudflare/` and `github/`.
+**Every root is written and applied.** `bootstrap/`, `artifact-registry/`,
+`iam/`, both environments of `secrets-` and `run-`, `cloudflare/`, `github/`,
+`observability/`. Nothing on the plan remains.
+
 `mydeck-agent-prod` serves the Worker warm at `min_instances = 1`;
 `mydeck-agent-dev` is idle and kept as the target for local `wrangler dev` and
 for images not yet trusted.
-
-Not written yet: `observability/` — the only one left.
 
 `run-dev/` cannot even *plan* until `secrets-dev/` is applied — it reads that
 module's state, and a state object that does not exist is a hard error rather
@@ -310,7 +311,19 @@ Bootstrap creates:
 ```text
 GCS Terraform state bucket
 project-wide Google Cloud API enablements
+a monthly budget alert on the billing account
 ```
+
+The budget is the one thing here that reaches ABOVE the project. Everything
+else in this repository lives inside `mydeck-linsnotes`; a budget belongs to the
+billing account, so applying `bootstrap/` needs Billing Account Costs Manager or
+Administrator in addition to project permissions.
+
+It also needs the provider's `billing_project` / `user_project_override`, set in
+`versions.tf`. Without them the Budgets API rejects the call as unattributed and
+returns `SERVICE_DISABLED` — naming Google's shared default consumer project,
+seconds after Terraform has successfully enabled the service on yours. The
+reason is in the file; the error does not explain itself.
 
 The bootstrap state initially remains local.
 
@@ -329,13 +342,18 @@ After bootstrap is complete, create the remaining modules in dependency order:
 ```text
 artifact-registry/
 iam/
-secrets-dev/
-run-dev/
-observability/
-github/           ← reads the above through terraform_remote_state
+secrets-<env>/    ← one per environment; iam/ must already know that env
+run-<env>/          reads both iam/ and secrets-<env>/
+observability/      reads run-prod/
+github/           ← reads artifact-registry/ and iam/
 ```
 
-`cloudflare/` has no place in that order — build it at any point.
+`cloudflare/` has no place in that order — it shares nothing with the GCP
+modules and can be built at any point.
+
+Order within a pair matters and across environments does not: `secrets-dev/`
+before `run-dev/`, `secrets-prod/` before `run-prod/`, but dev and prod are
+independent of each other.
 
 Each module should be reviewed with:
 
@@ -364,22 +382,24 @@ destroyed.
 The normal teardown order is therefore:
 
 ```text
-production resources, if any
+github/            holds the only references INTO the other roots' state
         ↓
-github/
+observability/     reads run-prod/
         ↓
-observability/
+run-<env>/         every environment
         ↓
-run-dev/
+secrets-<env>/     every environment
         ↓
-secrets-dev/
-        ↓
-iam/
+iam/               prevent_destroy on the pool and provider — see below
         ↓
 artifact-registry/
         ↓
 bootstrap/ LAST
 ```
+
+`cloudflare/` can be destroyed at any point, but its D1, KV and DNS records
+carry `prevent_destroy` — and removing that guard to destroy D1 deletes every
+user. That is the intent.
 
 `github/` goes first among these, because it holds the only references *into*
 the GCP modules' state. `cloudflare/` can be destroyed at any point — but note
