@@ -105,6 +105,33 @@ describe("which implementation answers", () => {
     expect(TUTOR.agentMode(e, user)).toBe("remote");
   });
 
+  it("treats \"*\" as everyone", () => {
+    // §11 step 8. A wildcard rather than a reinterpretation of empty, so that a
+    // deleted line or an unset variable cannot move the whole user base onto the
+    // remote path by accident.
+    const e = { ...env, AGENT_ENABLED: "true", AGENT_ALLOWED_USERS: "*" };
+    expect(TUTOR.agentMode(e, { email: "anyone@example.com" })).toBe("remote");
+  });
+
+  it("keeps meaning everyone when a leftover address sits beside the wildcard", () => {
+    // `*, someone@x.com` is not a narrowing. Reading it as one would be a
+    // surprise in the direction that matters.
+    const e = { ...env, AGENT_ENABLED: "true", AGENT_ALLOWED_USERS: `*, ${user.email}` };
+    expect(TUTOR.agentMode(e, { email: "stranger@example.com" })).toBe("remote");
+  });
+
+  it("still needs a flag: \"*\" alone is not enough", () => {
+    // The allowlist says WHO may be moved, never WHETHER anyone is. With both
+    // flags off this is still the JavaScript loop.
+    const e = { ...env, AGENT_ALLOWED_USERS: "*" };
+    expect(TUTOR.agentMode(e, user)).toBe("local");
+  });
+
+  it("shadows everyone when \"*\" is set and only AGENT_SHADOW is on", () => {
+    const e = { ...env, AGENT_SHADOW: "true", AGENT_ALLOWED_USERS: "*" };
+    expect(TUTOR.agentMode(e, { email: "anyone@example.com" })).toBe("shadow");
+  });
+
   it("prefers the remote path over shadowing when both are on", () => {
     // The one combination with no value: two turns of model budget spent to
     // compare a result against the thing it already replaced.

@@ -148,7 +148,19 @@ AI_TUTOR_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 
 ### Who gets the Python path. Empty means nobody, which is the point.
 # AGENT_ENABLED = "false"
-# AGENT_ALLOWED_USERS = ""            ### comma-separated emails, same shape as ADMIN_EMAILS
+### Who gets the Python path. Comma-separated emails, same shape as ADMIN_EMAILS.
+###
+### Empty means NOBODY, deliberately — the failure mode of "empty means
+### everybody" is the whole user base moved onto an unproven path by a config
+### line that looks inert.
+###
+### EVERYONE is "*", a separate value rather than a reinterpretation of empty,
+### so a deleted line or an unset variable in a fresh environment cannot move
+### every learner at once. Someone has to type it. That is §11 step 8.
+###
+### The allowlist says WHO may be moved, never WHETHER anyone is — AGENT_ENABLED
+### or AGENT_SHADOW still decides that.
+# AGENT_ALLOWED_USERS = ""
 
 ### Shadow mode runs BOTH implementations and discards the Python result, so a
 ### shadowed turn costs two turns for one answer.
