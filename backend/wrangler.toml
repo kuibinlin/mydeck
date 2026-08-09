@@ -149,6 +149,11 @@ AGENT_SERVICE_TIMEOUT_MS = "25000"
 ### Empty means nobody, deliberately. The failure mode of "empty means
 ### everybody" is the whole user base moved onto an unproven path by a config
 ### line that looks inert.
+###
+### EVERYONE is "*" — a separate value, not a reinterpretation of empty, so that
+### a deleted line or an unset variable in a fresh environment cannot move every
+### learner at once. Someone has to type it. That is §11 step 8, and the flip is
+### its own one-line commit.
 AGENT_ALLOWED_USERS = ""
 
 ### PRECEDENCE: AGENT_ENABLED beats AGENT_SHADOW. With both true the mode is

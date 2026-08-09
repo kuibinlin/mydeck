@@ -55,6 +55,14 @@ const ALLOWED_TOOLS = [
 // only other per-user gate in the codebase. Empty means nobody, deliberately:
 // the failure mode of "empty means everybody" is the whole user base moved onto
 // an unproven path by a config line that looks inert.
+//
+// EVERYONE is "*", and it is a separate value rather than a reinterpretation of
+// empty for that same reason. §11 step 8 needs a way to say "all users", and the
+// obvious implementation — treat an absent allowlist as universal once
+// AGENT_ENABLED is on — would mean a deleted line, a typo, or an unset variable
+// in a fresh environment silently moving every learner onto the remote path.
+//
+// "*" cannot be arrived at by omission. Someone has to type it.
 const truthy = (v) => String(v ?? "").trim().toLowerCase() === "true";
 
 const allowlist = (v) =>
@@ -66,8 +74,14 @@ const allowlist = (v) =>
 export function agentMode(env, user) {
   if (!agentService.isConfigured(env)) return "local";
 
+  // "*" is checked before the email so that an allowlist of `*, someone@x.com`
+  // still means everyone — a leftover address next to a wildcard is not a
+  // narrowing, and reading it as one would be a surprise in the dangerous
+  // direction.
   const allowed = allowlist(env.AGENT_ALLOWED_USERS);
-  if (!allowed.includes(String(user?.email ?? "").toLowerCase())) return "local";
+  const everyone = allowed.includes("*");
+
+  if (!everyone && !allowed.includes(String(user?.email ?? "").toLowerCase())) return "local";
 
   if (truthy(env.AGENT_ENABLED)) return "remote";
   if (truthy(env.AGENT_SHADOW)) return "shadow";
