@@ -7,8 +7,10 @@
 > document describes where it is *going*, and it is now mostly built and mostly
 > connected: contract, tests, Python loop, composition path, GCP infrastructure,
 > a Cloud Run service with a real model behind it, and a Worker that calls it.
-> What remains is widening the allowlist (step 8) — which needs a production
-> service first, for the cold-start reason in §8.5.
+> What remains is widening the allowlist (step 8). The infrastructure reason is
+> gone — `mydeck-agent-prod` is warm and serving. What gates it now is evidence:
+> how often a turn is slow enough to time out and leave a learner with no prose
+> (§13).
 >
 > Last revised: 2026-08-09. Every number and import claim below was measured
 > against the tree at that date; re-measure before trusting them.

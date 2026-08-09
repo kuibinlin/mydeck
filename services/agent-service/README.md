@@ -8,22 +8,26 @@ anything here. This file is only how to run it.
 
 **Status: serving real turns for one allowlisted account (§11 step 7).**
 `create_agent` over five tools, a scripted provider for tests, HSK through the
-existing MCP server. Running as `mydeck-agent-dev` in `asia-southeast1`, behind
-`aisingapore/Qwen-SEA-LION-v4-32B-IT`.
+existing MCP server. Running as `mydeck-agent-prod` in `asia-southeast1`, warm at
+`min_instances = 1`, behind `aisingapore/Qwen-SEA-LION-v4-32B-IT`.
+`mydeck-agent-dev` still exists — it is the target for local `wrangler dev` and
+somewhere to push an image before trusting it.
 
 Verified by a write landing rather than by an absence of errors: a turn asked to
 save, Cloud Run answered 200 in 3.2s, and two rows appeared in D1 four seconds
 later — with correctly formed Chinese, so the indices-not-characters contract
-(§7.2) held through a real model. Warm turns run 3–6s.
+(§7.2) held through a real model.
 
 Everyone not in `AGENT_ALLOWED_USERS` is still served by the Worker's own
 JavaScript loop.
 
-What is *not* done: step 8, widening it past the allowlist. That is gated on a
-production service rather than on this code — `min_instances = 0` means a
-first-request cold start of ~23.6s, fine for one tester and not for learners
-(architecture.md §8.5). Also still unproven: the `deck_name` branch, where the
-agent asks for a *new* draft deck instead of writing into one already offered.
+What is *not* done: step 8, widening it past the allowlist. The infrastructure
+reason is gone; what remains is evidence. Warm turns run 1.7–2.8s, but one took
+29.8s and hit the 20s deadline with an empty message, and through the Worker
+that costs the learner the prose entirely (architecture.md §13).
+
+Also still unproven: the `deck_name` branch, where the agent asks for a *new*
+draft deck instead of writing into one already offered.
 
 **The first real turn found a prompt defect that every test had missed.** Asked
 "什么是水" with nothing seeded, the model skipped `hsk_lookup` and asserted 水 is

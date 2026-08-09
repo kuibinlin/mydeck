@@ -179,9 +179,12 @@ services/
 §11 is the sequence, and steps 1–7 are done. `mydeck-agent-dev` runs on Cloud
 Run, the Worker calls it for the accounts in `AGENT_ALLOWED_USERS`, and a save
 it asked for reached D1 with correctly formed Chinese. Everyone else is on the
-JavaScript loop, which stays authoritative until step 8 — and step 8 needs a
-production service first, because `min_instances = 0` would hand real learners a
-23.6s cold start.
+JavaScript loop, which stays authoritative until step 8.
+
+Step 8 no longer waits on infrastructure: `mydeck-agent-prod` runs warm at
+`min_instances = 1` and answers in 1.7–2.8s. It waits on evidence — one warm
+turn took 29.8s and returned nothing, and how often that happens decides whether
+the experience is good enough to give everyone (§13).
 
 Three things about it that are decisions rather than details:
 
