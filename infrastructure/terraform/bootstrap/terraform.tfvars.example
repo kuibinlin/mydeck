@@ -10,3 +10,26 @@ project_id = "mydeck"
 
 # Default Google Cloud region.
 region = "asia-southeast1"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Budget
+# ─────────────────────────────────────────────────────────────────────────────
+
+# `gcloud billing accounts list` prints this. Not a secret, but tfvars is
+# gitignored so it stays out of the repository anyway.
+billing_account = "01ABCD-234EFG-5678HI"
+
+# Monthly. Expected spend is roughly a third of the default — one warm Cloud Run
+# instance (run-prod's min_instances = 1) is the only continuous cost, and
+# Artifact Registry, Secret Manager, the state bucket and monitoring are pennies
+# or free.
+#
+# Deliberately not set close to expected: at $20 the 50% threshold would fire
+# most months, and an alert that arrives every month is one nobody opens.
+# budget_amount = 50
+
+# Must MATCH the billing account's own currency or the API rejects the budget.
+# Defaults to SGD, which is what this account uses. Confirm before changing:
+#   gcloud billing accounts describe <ID> --format='value(currencyCode)'
+# budget_currency = "SGD"

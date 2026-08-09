@@ -5,7 +5,7 @@ Infrastructure as code.
 ```text
 infrastructure/
 └── terraform/
-    ├── bootstrap/          Terraform state bucket + project-wide APIs
+    ├── bootstrap/          state bucket, project-wide APIs, budget alert
     ├── artifact-registry/  container images for the agent service
     ├── iam/                WIF federation + deploy and runtime identities
     ├── modules/
@@ -311,7 +311,19 @@ Bootstrap creates:
 ```text
 GCS Terraform state bucket
 project-wide Google Cloud API enablements
+a monthly budget alert on the billing account
 ```
+
+The budget is the one thing here that reaches ABOVE the project. Everything
+else in this repository lives inside `mydeck-linsnotes`; a budget belongs to the
+billing account, so applying `bootstrap/` needs Billing Account Costs Manager or
+Administrator in addition to project permissions.
+
+It also needs the provider's `billing_project` / `user_project_override`, set in
+`versions.tf`. Without them the Budgets API rejects the call as unattributed and
+returns `SERVICE_DISABLED` — naming Google's shared default consumer project,
+seconds after Terraform has successfully enabled the service on yours. The
+reason is in the file; the error does not explain itself.
 
 The bootstrap state initially remains local.
 
