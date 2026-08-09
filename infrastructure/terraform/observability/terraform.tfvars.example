@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars. That file is gitignored (*.tfvars).
+#
+#   cp terraform.tfvars.example terraform.tfvars
+
+project_id = "mydeck-linsnotes"
+region     = "asia-southeast1"
+
+# Only prod is worth alerting on. mydeck-agent-dev scales to zero and exists to
+# be broken — alerting on it would train you to ignore the emails.
+environment = "prod"
+
+# Where alerts go. Kept out of the committed file for the same reason
+# ADMIN_EMAILS is: a personal address on a public repository.
+alert_email = "you@example.com"
+
+# p95 latency that fires an alert, in seconds. Defaults to 20 — AGENT_DEADLINE_S,
+# the point past which the agent could not finish the turn. Raising it above 25
+# is refused: beyond the Worker's timeout the alert only fires after the learner
+# has already lost the answer.
+# latency_threshold_s = 20
