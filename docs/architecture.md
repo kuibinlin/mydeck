@@ -441,6 +441,27 @@ Start with one project (`mydeck-linsnotes`) and two Cloud Run services
 (`mydeck-agent-dev`, `mydeck-agent-prod`). Separate projects per environment is
 the stronger isolation and can come later.
 
+The two services are not the same shape, and the difference is measured rather
+than stylistic:
+
+| | dev | prod |
+|---|---|---|
+| `min_instances` | 0 | **1** |
+| first request after idle | ~23.6s | ~2–6s |
+| cost when idle | nothing | one instance, billed continuously |
+
+Shadow mode on 2026-08-09 put a cold turn at **23,626 ms** against a 25s Worker
+timeout — a 1.4s margin, where a timeout is rethrown and the learner loses the
+prose. About 17.8s of that is Python starting and LangChain importing.
+`AGENT_DEADLINE_S` cannot help: Cloud Run holds the request while the container
+boots, so the agent's clock starts after the cost is already paid, and that turn
+reported `stopped_by: "answered"`.
+
+Dev keeps 0 because the only person paying a cold start is whoever is testing.
+This is the first continuously billed resource in the project, so it belongs to
+`run-prod/` and not before. Full numbers in
+[infrastructure/README.md](../infrastructure/README.md).
+
 ---
 
 ## 9. CI/CD ownership

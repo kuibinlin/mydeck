@@ -556,16 +556,46 @@ measure cold/warm latency
 production rollout
 ```
 
-The local latency measurements do not include:
+The local latency measurements did not include Cloud Run cold start, the
+Cloudflare → Google network hop, or production authentication, so this section
+used to say the dev deployment should be measured before deciding whether any
+synchronous request flow needs to become asynchronous.
+
+**Measured 2026-08-09**, from `[agent:shadow]` `remoteMs` — wall clock at the
+Worker, so it includes every one of those three:
 
 ```text
-Cloud Run cold start
-Cloudflare → Google network hop
-production authentication
+cold    23,626 ms      create_activity, 2 model calls
+warm     5,800 ms      create_activity, 2 model calls   ← same work
+warm     2,058 ms      no tools, 1 model call
+warm     1,776 ms      no tools, 1 model call
 ```
 
-so dev deployment should be measured before deciding whether any synchronous
-request flow needs to become asynchronous.
+Two conclusions.
+
+**Synchronous is fine. Keep it.** Warm turns are 1.8–5.8s, comfortably inside the
+Worker's 25s budget. Nothing here justifies the complexity of an asynchronous
+flow.
+
+**Cold start is the whole problem, and it is ~17.8s.** The two `create_activity`
+turns did identical work; the difference is Python starting and LangChain's
+import graph loading. That left **1.4s of margin** against
+`AGENT_SERVICE_TIMEOUT_MS = 25000` — and a Worker timeout is rethrown rather than
+retried, so `routes/zh.js` degrades to the cards and the learner loses the prose
+entirely.
+
+**`AGENT_DEADLINE_S` does not protect against this.** Cloud Run holds the request
+while the container boots, so the agent's clock starts *after* the cold start is
+already paid. That turn reported `stoppedBy: "answered"` — from the agent's own
+perspective it was a 5s turn. The timeout chain in `run-dev/variables.tf` bounds
+agent work and says nothing about container boot.
+
+So the fix is a warm instance, not a bigger timeout — there is nowhere to grow,
+since the free Workers plan caps a request at 30s wall clock (architecture.md §2)
+and 25s is already most of it. `run-dev/` keeps `min_instances = 0`; `run-prod/`
+should set `1`. Note that this removes *scale-to-zero* cold starts only: with
+`concurrency = 10`, the 11th simultaneous request still starts a second container
+and pays the boot.
 
 Kubernetes is not currently justified for this workload.
 

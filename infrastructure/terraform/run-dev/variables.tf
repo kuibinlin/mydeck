@@ -85,6 +85,22 @@ variable "bootstrap_image" {
 #
 # AGENT_SERVICE_TIMEOUT_MS lives in backend/wrangler.toml and is not managed
 # here. If you change one of these, check all three.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHAT THIS CHAIN DOES NOT COVER: COLD START
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# All three timeouts bound AGENT WORK. None of them bounds container boot.
+#
+# Cloud Run holds the request while the container starts, so the agent's clock
+# begins only once the handler runs. Measured 2026-08-09, a cold turn took
+# 23,626 ms end to end and still reported stopped_by "answered" — from inside
+# the agent it was a ~5s turn, because the other ~17.8s was Python starting and
+# LangChain importing, before the deadline had anything to measure.
+#
+# So the only limit a cold start can breach is the Worker's, and it came within
+# 1.4s of doing so. AGENT_DEADLINE_S cannot help; a warm instance can, which is
+# why var.min_instances exists and why production sets it to 1.
 # ─────────────────────────────────────────────────────────────────────────────
 
 variable "agent_deadline_s" {
@@ -193,9 +209,30 @@ variable "min_instances" {
   type        = number
   default     = 0
 
-  # Production will likely want 1, to keep a learner-facing request off the cold
-  # start path. That is the main cost difference between the environments: a
-  # warm instance bills continuously, an idle one at 0 bills nothing.
+  # PRODUCTION SHOULD SET 1, and this is now measured rather than assumed.
+  #
+  # Shadow mode, 2026-08-09, remoteMs at the Worker:
+  #
+  #   cold   23,626 ms   create_activity, 2 model calls
+  #   warm    5,800 ms   create_activity, 2 model calls   ← identical work
+  #   warm    1,776 ms   no tools
+  #
+  # ~17.8s of that is Python starting and LangChain importing, against an
+  # AGENT_SERVICE_TIMEOUT_MS of 25s. A 1.4s margin, and a Worker timeout is
+  # rethrown rather than retried — routes/zh.js degrades to the cards and the
+  # learner loses the prose.
+  #
+  # Raising the Worker timeout is not the alternative: the free Workers plan
+  # caps a request at 30s wall clock (architecture.md §2), so 25s is already
+  # most of the budget.
+  #
+  # 0 stays right for dev, where the only person paying the cold start is
+  # whoever is testing. It is the main cost difference between the environments:
+  # a warm instance bills continuously, an idle one bills nothing.
+  #
+  # Note what 1 does NOT do: it removes scale-to-zero cold starts only. With
+  # concurrency = 10, the 11th simultaneous request still starts a second
+  # container and pays the boot.
 }
 
 variable "max_instances" {
