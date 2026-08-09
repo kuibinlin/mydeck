@@ -150,12 +150,25 @@ tools/registry.js   ←  imported ONLY by services/tutor.js
 This is a subtree to cut, not a graph to untangle — a direct consequence of the
 existing rule that `ai/` imports nothing from `services/` except `errors.js`.
 
-| Stays in the Worker | Moves to Python (eventually) |
+| Stays in the Worker | Moves to Python |
 |---|---|
-| `services/aiContent.js` + its 3 endpoints | `services/tutor.js` |
+| `services/aiContent.js` + its 3 endpoints | `services/tutor.js`'s `runLocal` |
 | `ai/generateStructured.js`, `extract.js`, `schemas.js`, `prompts/` | `ai/agentLoop.js` |
 | `ai/callModel.js`, `ai/providers/` | `ai/toolMessages.js` |
 | `ai/usage.js` (quota — writes D1) | `tools/` (registry, repair, defs) |
+| **`services/tutor.js` itself** | |
+
+**The last row is the one to get right.** This table originally put the whole of
+`services/tutor.js` in the right-hand column, and that is wrong in a way that
+would delete the write path if followed. What moves is the *loop* — `runLocal`
+and what only it uses. What stays is everything the Worker must keep doing:
+`agentMode`, `runRemote`, the four policy checks, action materialisation and
+`saveFailed`.
+
+That is §8.2 — **the Worker writes, the agent asks** — and it is the reason the
+agent can be given a model with no database, no session and no way to know
+whether a save is authorised. Moving `tutor.js` would move the thing that
+decides. The file gets smaller; it does not leave.
 
 ### The cost of this cut
 
@@ -687,10 +700,42 @@ and one of them resolved by finding a bug:
    Still unproven: the `deck_name` branch, where Python asks for a *new* draft
    deck rather than writing into one already offered. Creating a deck is the
    more consequential half of `save_words_to_deck`.
-8. **Make Python authoritative**, JS retained as rollback.
-9. **Delete the JS agent subtree** — `services/tutor.js`, `ai/agentLoop.js`,
-   `ai/toolMessages.js`, `tools/` — after the rollback window closes. **Keep
-   everything non-agentic** (§4).
+8. **Make Python authoritative**, JS retained as rollback. One line:
+
+   ```diff
+   -AGENT_ALLOWED_USERS = "kuibin.dev@gmail.com"
+   +AGENT_ALLOWED_USERS = "*"
+   ```
+
+   `"*"` is a wildcard rather than a reinterpretation of empty, and the
+   distinction is load-bearing. Treating an absent allowlist as universal would
+   mean a deleted line, a typo, or an unset variable in a fresh environment
+   silently moving every learner onto the remote path — the exact failure
+   `agentMode`'s "empty means nobody" rule exists to prevent, and which has its
+   own test. `"*"` cannot be arrived at by omission.
+
+   `AGENT_ENABLED` still decides *whether* anyone moves; the allowlist only says
+   *who*. Both are in `backend/wrangler.toml`, committed, so this is a reviewable
+   PR with CI behind it and `git revert` as the rollback.
+
+   **Gated on §13**, not on code: a warm turn measured 29.8s and returned an
+   empty message, which through the Worker is a 25s timeout degrading to the
+   cards. Today that costs one tester who knows why. At step 8 it costs whichever
+   learner draws the slow turn, silently. The rate is the decision.
+9. **Delete the JS agent loop** — `runLocal` in `services/tutor.js`, plus
+   `ai/agentLoop.js`, `ai/toolMessages.js` and `tools/` — after the rollback
+   window closes. **Keep everything non-agentic** (§4).
+
+   **`services/tutor.js` itself stays.** An earlier version of this list named it
+   for deletion, and following that literally would remove the write path:
+   `runRemote`, the four policy checks, the action materialisation and
+   `saveFailed` all live there. That is the Worker's half of §8.2 — *the Worker
+   writes, the agent asks* — and it survives the migration by design. The file
+   gets smaller, not removed.
+
+   The gate is a count, not a date. Run step 8 for weeks and watch
+   `[agent] remote fallback`. If it never fires, the safety net is unused and
+   safe to remove; if it does, you learn why while it is still there.
 
 Do not create Artifact Registry or Cloud Run before the container runs locally.
 
