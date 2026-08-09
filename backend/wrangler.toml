@@ -121,13 +121,19 @@ AI_TUTOR_MODEL = "aisingapore/Qwen-SEA-LION-v4-32B-IT"
 
 ### The Python agent service — services/agent-service.
 ###
-### CURRENT STATE: §11 step 7. Python is AUTHORITATIVE for the accounts in
-### AGENT_ALLOWED_USERS — its reply is the reply, and the Worker materialises
-### the actions it asks for, so saves create real decks. Everyone else is on the
-### JavaScript loop, unchanged.
+### CURRENT STATE: §11 step 8. Python is AUTHORITATIVE for EVERY learner — its
+### reply is the reply, and the Worker materialises the actions it asks for, so
+### saves create real decks.
 ###
-### Rollback is AGENT_ENABLED = "false" and a deploy. Nothing persists that
-### needs unwinding; the JS loop never went anywhere.
+### The JavaScript loop is still here and still catches transport errors, bad
+### statuses, malformed responses and policy failures. It does NOT catch a
+### timeout: that is rethrown, and routes/zh.js degrades to the cards. So a turn
+### slower than AGENT_SERVICE_TIMEOUT_MS costs the learner the prose whether or
+### not the fallback exists — keeping it is step 9's question, not this one.
+###
+### Rollback is one line: AGENT_ALLOWED_USERS back to "". Or AGENT_ENABLED to
+### "false", which switches everyone off at once. Either is a revert and a
+### deploy; nothing persists that needs unwinding.
 ###
 ### Local development: point AGENT_SERVICE_URL at :8080 instead.
 ###   docker run --rm -p 8080:8080 --env-file services/agent-service/.env.local mydeck-agent:local
@@ -154,7 +160,7 @@ AGENT_SERVICE_TIMEOUT_MS = "25000"
 ### a deleted line or an unset variable in a fresh environment cannot move every
 ### learner at once. Someone has to type it. That is §11 step 8, and the flip is
 ### its own one-line commit.
-AGENT_ALLOWED_USERS = ""
+AGENT_ALLOWED_USERS = "*"
 
 ### PRECEDENCE: AGENT_ENABLED beats AGENT_SHADOW. With both true the mode is
 ### "remote" and shadow never runs — comparing the remote path against the thing
