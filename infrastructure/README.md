@@ -16,7 +16,8 @@ infrastructure/
     ├── run-dev/            │ and one environment's values
     ├── run-prod/           ┘
     ├── cloudflare/         D1, KV, Pages and two DNS records — all adopted
-    └── github/             branch ruleset + the variables CI reads
+    ├── github/             branch ruleset + the variables CI reads
+    └── observability/      three alerts on the prod agent service
 ```
 
 `modules/` holds every resource and all the reasoning. The roots hold a state
@@ -31,13 +32,13 @@ It is created first and destroyed last.
 
 ## Current state
 
-**Every root written so far is applied** — `bootstrap/`, `artifact-registry/`,
-`iam/`, both environments of `secrets-` and `run-`, `cloudflare/` and `github/`.
+**Every root is written and applied.** `bootstrap/`, `artifact-registry/`,
+`iam/`, both environments of `secrets-` and `run-`, `cloudflare/`, `github/`,
+`observability/`. Nothing on the plan remains.
+
 `mydeck-agent-prod` serves the Worker warm at `min_instances = 1`;
 `mydeck-agent-dev` is idle and kept as the target for local `wrangler dev` and
 for images not yet trusted.
-
-Not written yet: `observability/` — the only one left.
 
 `run-dev/` cannot even *plan* until `secrets-dev/` is applied — it reads that
 module's state, and a state object that does not exist is a hard error rather
@@ -329,13 +330,18 @@ After bootstrap is complete, create the remaining modules in dependency order:
 ```text
 artifact-registry/
 iam/
-secrets-dev/
-run-dev/
-observability/
-github/           ← reads the above through terraform_remote_state
+secrets-<env>/    ← one per environment; iam/ must already know that env
+run-<env>/          reads both iam/ and secrets-<env>/
+observability/      reads run-prod/
+github/           ← reads artifact-registry/ and iam/
 ```
 
-`cloudflare/` has no place in that order — build it at any point.
+`cloudflare/` has no place in that order — it shares nothing with the GCP
+modules and can be built at any point.
+
+Order within a pair matters and across environments does not: `secrets-dev/`
+before `run-dev/`, `secrets-prod/` before `run-prod/`, but dev and prod are
+independent of each other.
 
 Each module should be reviewed with:
 
@@ -364,22 +370,24 @@ destroyed.
 The normal teardown order is therefore:
 
 ```text
-production resources, if any
+github/            holds the only references INTO the other roots' state
         ↓
-github/
+observability/     reads run-prod/
         ↓
-observability/
+run-<env>/         every environment
         ↓
-run-dev/
+secrets-<env>/     every environment
         ↓
-secrets-dev/
-        ↓
-iam/
+iam/               prevent_destroy on the pool and provider — see below
         ↓
 artifact-registry/
         ↓
 bootstrap/ LAST
 ```
+
+`cloudflare/` can be destroyed at any point, but its D1, KV and DNS records
+carry `prevent_destroy` — and removing that guard to destroy D1 deletes every
+user. That is the intent.
 
 `github/` goes first among these, because it holds the only references *into*
 the GCP modules' state. `cloudflare/` can be destroyed at any point — but note
