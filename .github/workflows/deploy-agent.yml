@@ -1,0 +1,174 @@
+# Build, scan, push and deploy the Python agent service.
+#
+# This is the first thing that uses the keyless chain iam/ built. Until now its
+# only evidence was an IAM policy read back with gcloud; here it either mints a
+# token or it does not.
+#
+#   GitHub OIDC token
+#     → provider mydeck-github/github-actions   (trusts this repo, any ref)
+#     → impersonate mydeck-deploy               (binding pins refs/heads/main)
+#         ├── artifactregistry.writer  on mydeck-images
+#         ├── serviceAccountUser       on the runtime account
+#         └── run.developer            on the service
+#
+# No Google service account key exists anywhere. That is the whole point, and it
+# is why `id-token: write` below is not optional.
+
+name: deploy-agent
+
+on:
+  push:
+    branches: [main]
+    # The image only contains services/agent-service — the Dockerfile's build
+    # context is that directory. A frontend or Worker change cannot alter this
+    # image, so it must not trigger a deploy.
+    paths:
+      - "services/agent-service/**"
+      - ".github/workflows/deploy-agent.yml"
+
+  # Promotion to production is deliberate, never automatic. See the comment on
+  # `target` below.
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which environment to deploy"
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+permissions:
+  contents: read
+  # Mint the OIDC token that WIF exchanges. Without it google-github-actions/auth
+  # fails with a message about the token endpoint that does not mention this line.
+  id-token: write
+  # Upload the Trivy SARIF report to the Security tab.
+  security-events: write
+
+# Two deploys of the same service at once would race to be the live revision.
+concurrency:
+  group: deploy-agent-${{ inputs.target || 'dev' }}
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: mydeck-linsnotes
+  REGION: asia-southeast1
+  REPOSITORY: asia-southeast1-docker.pkg.dev/mydeck-linsnotes/mydeck-images/mydeck-agent
+
+  # Hardcoded for now, and deliberately so: github/ is not written yet, and its
+  # job is to publish these from iam/'s Terraform outputs as Actions variables —
+  # so that a WIF provider path nobody types correctly twice is never typed at
+  # all. Until then, these must match `terraform output` in infrastructure/iam.
+  WIF_PROVIDER: projects/174503591496/locations/global/workloadIdentityPools/mydeck-github/providers/github-actions
+  DEPLOY_SA: mydeck-deploy@mydeck-linsnotes.iam.gserviceaccount.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # ─────────────────────────────────────────────────────────────────────
+      # Build and scan BEFORE authenticating.
+      #
+      # A failing scan should never have reached a cloud credential. Nothing in
+      # these three steps needs Google, so they run first and fail cheaply.
+      # ─────────────────────────────────────────────────────────────────────
+
+      - name: Resolve tag
+        id: tag
+        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      # No --platform flag. ubuntu-latest is already x86_64, which is what Cloud
+      # Run runs. The flag is only needed on an arm64 Mac — see the Dockerfile
+      # header for why an arm64 image pushes and deploys happily and then fails
+      # to start with an error that never says "architecture".
+      - name: Build
+        run: docker build -t "agent:${{ steps.tag.outputs.sha }}" services/agent-service
+
+      # Report everything, block nothing. All findings land in the Security tab
+      # where they are reviewable and trend over time.
+      - name: Scan — report
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: agent:${{ steps.tag.outputs.sha }}
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH
+
+      - uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy.sarif
+
+      # Block only on what someone can actually act on.
+      #
+      # As of 2026-08-09 the image carries 24 CRITICAL/HIGH findings and ZERO of
+      # them have a fixed version — Debian has assessed them and will not patch
+      # them in bookworm. Gating on the raw count means a permanently red build,
+      # and a check that is always red is a check nobody reads.
+      #
+      # --ignore-unfixed is a statement about ACTIONABILITY, not risk. That is
+      # exactly why the report step above exists and is not conditional on it.
+      - name: Scan — gate
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: agent:${{ steps.tag.outputs.sha }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # ─────────────────────────────────────────────────────────────────────
+      # Now Google.
+      # ─────────────────────────────────────────────────────────────────────
+
+      - name: Authenticate — keyless
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Push
+        run: |
+          set -euo pipefail
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker tag "agent:${{ steps.tag.outputs.sha }}" "${REPOSITORY}:${{ steps.tag.outputs.sha }}"
+          docker push "${REPOSITORY}:${{ steps.tag.outputs.sha }}"
+
+      # Only --image. Every other setting — CPU, memory, concurrency, ingress,
+      # timeout, scaling, runtime identity, env vars, secret mounts — belongs to
+      # Terraform, and run-<env>/ ignores changes to this field so the two do not
+      # fight. docs/architecture.md §9.
+      - name: Deploy
+        id: deploy
+        run: |
+          set -euo pipefail
+          SERVICE="mydeck-agent-${{ inputs.target || 'dev' }}"
+          gcloud run deploy "$SERVICE" \
+            --image "${REPOSITORY}:${{ steps.tag.outputs.sha }}" \
+            --region "$REGION" --project "$PROJECT_ID" --quiet
+          echo "service=$SERVICE" >> "$GITHUB_OUTPUT"
+
+      # /health answers 200 from the PREVIOUS revision just as happily as from
+      # the new one, so it cannot tell a successful deploy from a silent
+      # rollback. Only the revision can. This is the assertion
+      # .github/workflows/README.md argues for, and app/version.py exists for.
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          SERVICE="${{ steps.deploy.outputs.service }}"
+          URL=$(gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT_ID" --format='value(status.url)')
+          REV=$(gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT_ID" --format='value(status.latestReadyRevisionName)')
+
+          test "$(curl -fsS "$URL/health" | jq -r .status)" = "ok"
+
+          SERVING=$(curl -fsS "$URL/version" | jq -r .revision)
+          echo "expected revision: $REV"
+          echo "serving revision:  $SERVING"
+          test "$SERVING" = "$REV"
+
+          echo "✅ $SERVICE is serving ${REPOSITORY}:${{ steps.tag.outputs.sha }} as $REV"
