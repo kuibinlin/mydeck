@@ -1,0 +1,33 @@
+# Copy to terraform.tfvars. That file is gitignored (*.tfvars).
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# Everything here is an identifier. The API token is NOT here — export it:
+#
+#   export CLOUDFLARE_API_TOKEN='...'
+#
+# A token passed through a variable is a token written into state in plaintext,
+# in a bucket that keeps 20 generations. docs/architecture.md §10.
+#
+# This is also NOT the deploy token in GitHub Actions secrets. That one is
+# scoped to Workers Scripts:Edit; this one can rewrite DNS and stays local.
+# Scopes needed here:
+#
+#   Zone:DNS:Edit, Zone:Zone Settings:Edit   on linsnotes.com
+#   Account:D1:Edit
+#   Account:Workers KV Storage:Edit
+#   Account:Cloudflare Pages:Edit
+
+# `wrangler whoami` prints this, or the dashboard sidebar.
+account_id = "0000000000000000000000000000000f"
+
+# Looked up by name rather than pinned by ID — a typo fails at plan time with
+# "zone not found" rather than silently managing a different zone.
+zone_name = "linsnotes.com"
+
+# As it appears in the Pages dashboard.
+pages_project_name = "mydeck"
+
+# Defaults match backend/wrangler.toml and normally need no override.
+# d1_database_name   = "linsnotes-db"
+# kv_namespace_title = "mydeck-sessions"
