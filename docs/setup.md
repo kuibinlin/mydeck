@@ -60,8 +60,13 @@ Linux `~/.config/.wrangler/config/default.toml`) and is never uploaded. Run
 
 ## 3. Create Cloudflare resources
 
-`backend/wrangler.toml` is **gitignored** — a fresh clone only has
-`backend/wrangler.toml.example`. Copy it first:
+`backend/wrangler.toml` is **committed**, so a fresh clone already has a
+working config — pointed at *this* project's D1 database, KV namespace and
+routes. Deploying it to a different Cloudflare account means replacing those
+IDs.
+
+`wrangler.toml.example` is the annotated reference: every option with the
+reasoning behind it. To start from scratch instead:
 
 ```bash
 cd backend
@@ -242,8 +247,15 @@ AI_DAILY_LIMIT_FREE = "60"            # per model call, not per request
 
 The full list is in [reference.md](reference.md#backend--wranglertoml-vars).
 
-> **`wrangler.toml` is gitignored, `wrangler.toml.example` is not.** Any new
-> binding or var must be added to the example too, or a fresh clone won't build.
+> **`wrangler.toml` is committed** — CI cannot deploy a Worker whose config is
+> not in the repo, and it holds no secrets. Keep `wrangler.toml.example` in step
+> anyway: it is the annotated reference, and a new binding explained nowhere is
+> a binding nobody can change safely.
+>
+> One value is deliberately absent from the committed file: `ADMIN_EMAILS`, a
+> personal address on a public repository. It is injected at deploy from a
+> GitHub Actions variable, and `deploy-api.yml` refuses to deploy without it
+> rather than silently removing every admin.
 
 ### Set production secrets
 

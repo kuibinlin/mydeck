@@ -86,10 +86,24 @@ jobs:
         working-directory: backend
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ADMIN_EMAILS: ${{ vars.ADMIN_EMAILS }}
         run: |
           set -euo pipefail
+
+          # ADMIN_EMAILS is the one var deliberately absent from wrangler.toml —
+          # a personal address, and this repository is public. Unset, nobody is
+          # an admin, which fails closed but silently. Fail the deploy instead:
+          # losing every admin is not something to discover later.
+          if [ -z "${ADMIN_EMAILS:-}" ]; then
+            echo "::error::ADMIN_EMAILS repository variable is not set."
+            echo "  gh variable set ADMIN_EMAILS --repo ${{ github.repository }}"
+            exit 1
+          fi
+
           SHA=$(git rev-parse --short HEAD)
-          npx wrangler deploy --var APP_VERSION:"$SHA"
+          npx wrangler deploy \
+            --var APP_VERSION:"$SHA" \
+            --var ADMIN_EMAILS:"$ADMIN_EMAILS"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
       # /health answers 200 from the PREVIOUS deploy just as happily as from the

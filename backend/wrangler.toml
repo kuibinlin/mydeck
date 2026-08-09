@@ -1,0 +1,191 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# wrangler.toml — Cloudflare Worker configuration
+#
+# Deploy with:
+#   npx wrangler deploy
+#
+# That single command reads this file and deploys the worker with all bindings.
+#
+# Sections in this file:
+#   name             — Worker name registered in Cloudflare dashboard， must match the name in your Cloudflare dashboard.
+#   main             — Entry point bundled and uploaded as the Worker script
+#   compatibility_date — Locks the Workers runtime API version
+#   [[d1_databases]] — Binds env.DB → D1 SQLite database (users, decks, cards， scores)
+#   [[kv_namespaces]] — Binds env.SESSIONS → KV store (sessions, magic links)
+#   [observability]  — Enables request logging in the Cloudflare dashboard
+#   [vars]           — Non-secret env vars (FRONTEND_URL, FROM_EMAIL)
+#   [[routes]]       — Custom domain routing (requires linsnotes.com on Cloudflare)
+# ─────────────────────────────────────────────────────────────────────────────
+
+name = "linsnotes-api"
+main = "src/index.js"
+compatibility_date = "2026-03-24"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "linsnotes-db"
+database_id = "e7e40805-1eb3-42de-bfe8-2452b965f1c5"
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "3b9cbc113e0140baa542f454cb1ac5db"
+
+### HSK vocabulary server, bound worker-to-worker.
+###
+### The public endpoint (hsk-mcp.linsnotes.com) is rate limited to 30 req/min
+### PER IP. Proxied through this Worker every learner shares a handful of egress
+### IPs, which turns that into a GLOBAL ceiling — ten concurrent users at three
+### lookups each is already 3x over. A service binding carries no IP and skips
+### the limiter entirely, so this is a correctness requirement, not a speed one.
+###
+### Absent under `wrangler dev`; integrations/hskMcp.js falls back to HTTPS.
+[[services]]
+binding = "HSK"
+service = "hsk-mcp"
+
+[observability]
+enabled = true
+
+### Non-secret environment variables — safe to commit.
+### Secrets (API keys, OAuth credentials) must never go here.
+### Set them once via CLI: npx wrangler secret put <KEY>
+###   - RESEND_API_KEY
+###   - GITHUB_CLIENT_ID
+###   - GITHUB_CLIENT_SECRET
+### For local dev, put secrets in .dev.vars (gitignored).
+[vars]
+FRONTEND_URL = "https://mydeck.linsnotes.com"
+FROM_EMAIL = "noreply@linsnotes.com"
+### ADMIN_EMAILS is NOT here, and that is the one exception in this file.
+###
+### It is a personal address and this repository is public. Everything else
+### here is an identifier, a limit or a flag — nothing worth withholding — but
+### an email in a public file is a spam vector forever, because history keeps it.
+###
+### Injected at deploy from a GitHub Actions VARIABLE (not a secret; it is not
+### one), set once with:
+###
+###   gh variable set ADMIN_EMAILS --repo kuibinlin/mydeck
+###
+### For local dev, put it in backend/.dev.vars, which is still gitignored.
+###
+### Unset, nobody is an admin. That fails closed, which is the right direction —
+### but .github/workflows/deploy-api.yml checks for it anyway and refuses to
+### deploy rather than silently removing every admin.
+AI_MAX_RETRIES = "3"
+AI_DAILY_LIMIT_FREE = "60"   # counted per model call; a tutor turn costs 1-4
+MAX_CARDS_PER_DECK = "50"       # max flashcards per deck
+MAX_QUESTIONS_PER_DECK = "50"   # max questions per challenge deck
+
+### SEA-LION (AI Singapore) — OpenAI-compatible, so the provider stays "openai".
+### AI_BASE_URL is the host only; the code appends /v1/chat/completions.
+### Needs AI_API_KEY: .dev.vars locally, `wrangler secret put AI_API_KEY` in prod.
+###
+### Two models, because one model cannot do both jobs:
+###
+###   AI_MODEL        flashcards and quiz questions. Wants clean JSON and speed.
+###                   Gemma has no reasoning phase — 74 completion tokens and
+###                   2.7s for three cards, against 1401 tokens and 34s for Qwen
+###                   doing the same thing, almost all of it thinking out loud.
+###   AI_TUTOR_MODEL  the 中文 agent loop. Needs to hold a tool call, which Gemma
+###                   will not do: it accepts the tools and then answers from its
+###                   own memory, so the reply looks right while every character
+###                   in it bypassed the dictionary.
+###                   NOT v4.5 — that one reasons, and a loop of up to four steps
+###                   with a reasoning model measured 192s and 201s per turn. v4
+###                   calls the tool in 1.8s with no reasoning phase.
+AI_DEFAULT_PROVIDER = "openai"
+AI_BASE_URL = "https://api.sea-lion.ai"
+AI_MODEL = "aisingapore/Gemma-SEA-LION-v4-27B-IT"
+AI_TUTOR_MODEL = "aisingapore/Qwen-SEA-LION-v4-32B-IT"
+
+### Cloudflare Workers AI, via the env.AI binding — no API key needed.
+###
+### Free tier is 10,000 neurons/day and it is ACCOUNT-WIDE, not per user. Each
+### tutor model call measured ~45 neurons and one turn spends 1-4 of them, so the
+### whole account gets roughly 50-200 tutor turns a day before 4006. That ceiling
+### is why the default above is SEA-LION. Swap back for local work when the
+### SEA-LION key is unavailable; providers/cloudflare.js reports 4006 honestly.
+# AI_DEFAULT_PROVIDER = "cloudflare"
+# AI_MODEL = "@cf/aisingapore/gemma-sea-lion-v4-27b-it"
+# AI_TUTOR_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+
+
+### Tested Cloudflare Model
+    # "@cf/nvidia/nemotron-3-120b-a12b"
+    # "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+    # "@cf/qwen/qwq-32b"
+    # "@cf/meta/llama-4-scout-17b-16e-instruct"
+    # "@cf/aisingapore/gemma-sea-lion-v4-27b-it"
+
+
+### The Python agent service — services/agent-service.
+###
+### CURRENT STATE: §11 step 7. Python is AUTHORITATIVE for the accounts in
+### AGENT_ALLOWED_USERS — its reply is the reply, and the Worker materialises
+### the actions it asks for, so saves create real decks. Everyone else is on the
+### JavaScript loop, unchanged.
+###
+### Rollback is AGENT_ENABLED = "false" and a deploy. Nothing persists that
+### needs unwinding; the JS loop never went anywhere.
+###
+### Local development: point AGENT_SERVICE_URL at :8080 instead.
+###   docker run --rm -p 8080:8080 --env-file services/agent-service/.env.local mydeck-agent:local
+###
+### AGENT_SERVICE_TIMEOUT_MS is PAIRED with AGENT_DEADLINE_S in the agent (20s).
+### The agent must stop first; otherwise it works on past the point where this
+### Worker has given up, spending model budget nobody will read.
+### PROD, paired with the AGENT_SERVICE_SECRET already set from
+### mydeck-agent-prod-service-secret. These two must move together: either one
+### alone is a 401, and a 401 falls back to the JavaScript loop silently — so it
+### looks like nothing happened rather than like a mistake.
+###
+### mydeck-agent-dev is still running and is the target for local `wrangler dev`
+### and for images you do not trust yet. It expects the DEV secret, so pointing
+### this back at it means putting the dev secret back too.
+AGENT_SERVICE_URL = "https://mydeck-agent-prod-42rh5oo32a-as.a.run.app"
+AGENT_SERVICE_TIMEOUT_MS = "25000"
+
+### Empty means nobody, deliberately. The failure mode of "empty means
+### everybody" is the whole user base moved onto an unproven path by a config
+### line that looks inert.
+AGENT_ALLOWED_USERS = ""
+
+### PRECEDENCE: AGENT_ENABLED beats AGENT_SHADOW. With both true the mode is
+### "remote" and shadow never runs — comparing the remote path against the thing
+### it already replaced is the one combination with no value (services/tutor.js
+### agentMode). So step 6 required ENABLED false; this is step 7 flipping it.
+###
+### What changes the moment this is true, for allowed accounts only:
+###   - runRemote's answer IS the answer; runLocal is no longer reached
+###   - intended_actions are MATERIALISED — a save writes a real deck
+###   - ai_usage_log is written from the model_calls Python reports
+###   - a timeout is rethrown and routes/zh.js degrades to the cards, so a cold
+###     start over 25s costs the prose entirely. Warm it first:
+###       curl -fsS $AGENT_SERVICE_URL/health
+AGENT_ENABLED = "true"
+
+### Inert while AGENT_ENABLED is true — set to false so the file says what it
+### means rather than relying on the precedence rule to hide it.
+###
+### If you roll back to step 6: shadow runs BOTH implementations and discards
+### the Python result, so a shadowed turn costs two turns for one answer. With
+### AI_DEFAULT_PROVIDER "openai" above, both halves bill AI_API_KEY — the
+### Workers AI neuron allowance is not in play unless that provider is
+### "cloudflare". It does NOT spend the learner's quota: shadow writes no
+### ai_usage_log row, so AI_DAILY_LIMIT_FREE is untouched.
+###
+### Your own account only, never a global flag.
+AGENT_SHADOW = "false"
+
+
+### Custom domain — routes mydeckapi.linsnotes.com to this worker.
+### Requires linsnotes.com to be on Cloudflare.
+[[routes]]
+pattern = "mydeckapi.linsnotes.com/*"
+zone_name = "linsnotes.com"
+
+# Workers AI binding — gives the worker access to env.AI for LLM inference.
+# Model selection happens at runtime in code, not here.
+[ai]
+binding = "AI"
