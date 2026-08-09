@@ -94,7 +94,7 @@ production value. Only `.env.example` is committed.
 
 ### Backend — `wrangler.toml` `[vars]` (safe to commit)
 
-`backend/wrangler.toml` is gitignored; `backend/wrangler.toml.example` is the
+`backend/wrangler.toml` is committed; `backend/wrangler.toml.example` is the
 committed template. Add any new var to both.
 
 | Variable | Default | Description |

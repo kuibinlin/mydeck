@@ -93,7 +93,7 @@ live together.
 
 ```
 backend/
-├── wrangler.toml               gitignored — bindings, vars, routes
+├── wrangler.toml               committed — bindings, vars, routes, flags
 ├── wrangler.toml.example       committed template; add new bindings here TOO
 ├── .dev.vars                   gitignored — local secrets
 ├── schema.sql                  fresh databases only
