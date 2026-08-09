@@ -39,7 +39,7 @@ things it can send back are integers and prose.
 
 ```bash
 npm run dev:agent          # from the repo root — :8080, reload on save
-npm run check:agent        # ruff + pytest + mypy
+npm run check:agent        # ruff + pytest + pyright
 ```
 
 Or directly, if you prefer:

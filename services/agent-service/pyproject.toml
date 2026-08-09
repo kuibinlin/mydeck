@@ -37,10 +37,10 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1.411",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "ruff>=0.7",
-    "mypy>=1.13",
 ]
 
 # Nothing imports this project as a library — the container copies `app/` and
@@ -59,6 +59,26 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
-[tool.mypy]
-python_version = "3.12"
-strict = true
+[tool.pyright]
+pythonVersion = "3.12"
+
+typeCheckingMode = "strict"
+
+# "strict" is not the same tier in both tools, and swapping mypy --strict for
+# pyright strict raised 66 errors. 65 of them were one family: reportUnknown*,
+# pyright's rule that no Unknown type may leak anywhere. It fires wherever a
+# value crosses an untyped boundary — json.loads() results, MCP responses,
+# langchain returns — and mypy --strict does not check that at all.
+#
+# Those three are therefore off. Everything else stays on, which is still a
+# larger set than mypy --strict enforced: reportUnnecessaryCast caught dead code
+# in agent/tools/args.py that mypy had passed for months.
+#
+# Turning them back on is a real project, not a config change: app/hsk/project.py
+# alone accounts for 30, and silencing them properly means TypedDicts for the
+# HSK server's JSON rather than annotations. Worth doing if that projection ever
+# gets subtle — it is a context-budget correctness requirement (CLAUDE.md) — but
+# it is not what a type checker swap should smuggle in.
+reportUnknownVariableType = false
+reportUnknownMemberType = false
+reportUnknownArgumentType = false

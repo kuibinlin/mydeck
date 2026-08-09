@@ -126,11 +126,16 @@ def as_tool(
 ) -> StructuredTool:
     """Bind a coroutine and its arg schema into a tool.
 
-    cast() because from_function's signature does not accept a closure or a
-    Pydantic metaclass without complaint; both are correct at runtime.
+    cast() on args_schema because from_function's signature does not accept a
+    Pydantic metaclass without complaint; it is correct at runtime.
+
+    `fn` needs no cast — it is already declared Any, because from_function
+    cannot express the signature of the closures passed to it. It used to carry
+    one anyway; pyright's reportUnnecessaryCast is what noticed, mypy --strict
+    did not.
     """
     return StructuredTool.from_function(
-        coroutine=cast(Any, fn),
+        coroutine=fn,
         name=name,
         description=description,
         args_schema=cast(Any, args_schema),

@@ -21,7 +21,7 @@
     "test:agent": "uv run --directory services/agent-service pytest -q",
     "lint:agent": "uv run --directory services/agent-service ruff check .",
     "check:agent": "npm run lint:agent && npm run test:agent && npm run typecheck:agent",
-    "typecheck:agent": "uv run --directory services/agent-service mypy app",
+    "typecheck:agent": "uv run --directory services/agent-service pyright app",
     "dev:agent": "uv run --directory services/agent-service uvicorn app.main:app --reload --port 8080",
     "deploy:api": "npm --workspace backend run deploy",
     "db:migrate": "npm --workspace backend run db:migrate",
