@@ -1,9 +1,13 @@
 // AI-backed content generation.
 //
 // Sits in services/ rather than in a route handler so the same call is
-// available to an HTTP request, an agent tool, or a test. Each function
-// validates input, checks the caller's quota, prompts the model, records
-// usage, and returns plain data.
+// available to an HTTP request or a test without a Request object in sight.
+// Each function validates input, checks the caller's quota, prompts the model,
+// records usage, and returns plain data.
+//
+// It was also reachable from an agent tool, which is gone with `tools/` (§11
+// step 9). The placement is unchanged by that: the rule is that domain logic
+// does not live behind HTTP, and one caller is as good a reason as two.
 
 import { badRequest, tooManyRequests } from "./errors.js";
 import {

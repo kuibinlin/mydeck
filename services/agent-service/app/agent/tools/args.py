@@ -3,14 +3,15 @@
 Two jobs: describe what a tool accepts, and survive what actually arrives.
 
 ARGUMENT REPAIR. Models get argument types wrong on essentially every call —
-backend/test/repair.test.js has sixteen measured cases from the Worker. Pydantic
-rejects, and a rejection costs a whole turn to retry. What is wanted is repair
-where the meaning is unambiguous (a JSON array arriving as a string, a scalar
-where a list belongs, a float for an integer) and rejection only where it is
-not. The before-validator does the first; the field types do the second.
+the Worker measured sixteen distinct cases in backend/test/repair.test.js,
+deleted with its own repair layer in §11 step 9. Pydantic rejects, and a
+rejection costs a whole turn to retry. What is wanted is repair where the
+meaning is unambiguous (a JSON array arriving as a string, a scalar where a list
+belongs, a float for an integer) and rejection only where it is not. The
+before-validator does the first; the field types do the second.
 
 The arg schema and the tool function's signature are two descriptions of the
-same thing, so they can drift. `test_tool_schemas.py` asserts they match.
+same thing, so they can drift. `tests/test_tools.py` asserts they match.
 """
 
 from __future__ import annotations

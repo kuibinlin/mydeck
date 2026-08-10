@@ -88,9 +88,9 @@ async def turn(request: TurnRequest) -> TurnResponse:
     cannot prove that is discarded there.
 
     This never raises for a model or dictionary failure. Those come back as
-    `stopped_by: "model_error"` with whatever text exists, because the Worker
-    treats a 5xx as a reason to fall back to its own loop — spending a second
-    model budget on something that already failed for a reason a retry will not
-    fix.
+    `stopped_by: "model_error"` with whatever text exists. A 5xx would tell the
+    Worker the hop itself broke, and since §11 step 9 that costs the learner the
+    tutor's prose outright — where a reported `model_error` still carries any
+    text the turn managed to produce.
     """
     return await run_turn(request)

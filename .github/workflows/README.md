@@ -1,6 +1,9 @@
 # .github/workflows/
 
-CI/CD workflows. **Empty on purpose** — no workflow is defined yet.
+CI/CD workflows. Four are defined — `ci.yml`, `deploy-api.yml`,
+`deploy-agent.yml` and `scan.yml`; the table at the bottom of this file is the
+authority on what each one does. This line said the directory was empty on
+purpose long after it stopped being.
 
 ## The commands a workflow would run
 

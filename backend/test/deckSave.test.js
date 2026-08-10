@@ -10,7 +10,6 @@ import { saveWords, SAVE_LIMITS } from "../src/services/deckSave.js";
 import { getDeck } from "../src/services/flashcards.js";
 import { createUserWithSession, createFlashcardDeck, requestJson } from "./helpers";
 import { TUTOR } from "../src/services/tutor.js";
-import * as registry from "../src/tools/registry.js";
 
 const learner = (n = "") =>
   createUserWithSession({ email: `save${n}@example.com`, username: `save${n || "0"}` });
@@ -237,29 +236,29 @@ describe("save intent", () => {
   });
 });
 
-// registry.select() decides what is ADVERTISED. It does not decide what can
-// run — registry.execute resolves any name against the whole registry. So the
-// allowlist has to be checked where tools are actually invoked, or every
-// withheld tool is live, publish included.
+// ALLOWED_TOOLS is no longer a filter over a local registry — §11 step 9 deleted
+// that. It is now the `allowed_tools` field of the request sent to
+// services/agent-service, so it decides what the agent is even told exists.
+//
+// The tests that used to live here checked the JS registry's own behaviour:
+// that select() only chooses what is ADVERTISED while execute() would resolve
+// any name, which is why the allowlist had to be re-checked where tools ran.
+// That gap moved with the loop — app/agent/state.py enforces the same rule on
+// the Python side, and tests/test_guards.py covers it.
+//
+// What survives here is the list itself, because publishing is still the least
+// reversible action in the app and still must not be offered.
 describe("the tutor's allowlist", () => {
   it("withholds both publish tools", () => {
     expect(TUTOR.ALLOWED_TOOLS).not.toContain("publish_flashcard_deck");
     expect(TUTOR.ALLOWED_TOOLS).not.toContain("publish_challenge");
   });
 
-  it("names only tools that actually exist", () => {
-    for (const name of TUTOR.ALLOWED_TOOLS) expect(registry.get(name), name).toBeTruthy();
-  });
-
-  // The bypass itself: a name that was never offered still resolves through the
-  // registry, which is why tutor.js checks the name before delegating.
-  it("registry.execute does not enforce the allowlist on its own", async () => {
-    const { user } = await learner("t");
-    expect(registry.select(TUTOR.ALLOWED_TOOLS).map((t) => t.name)).not.toContain(
-      "publish_flashcard_deck",
-    );
-    const out = await registry.execute("publish_flashcard_deck", env, { user }, { deckId: 1 });
-    // It runs — it fails on ownership, not on the allowlist. That is the gap.
-    expect(out.error).not.toMatch(/unknown tool/i);
+  // Every name here crosses to Python, where schemas.py validates it against
+  // TOOL_NAMES and rejects the whole request with a 422 if one is unknown. So a
+  // name added on this side alone does not degrade — it breaks every turn.
+  // services/agent-service/tests/test_tool_parity.py pins the two lists.
+  it("names tools in the shape the contract expects", () => {
+    for (const name of TUTOR.ALLOWED_TOOLS) expect(name).toMatch(/^[a-z][a-z0-9_]*$/);
   });
 });

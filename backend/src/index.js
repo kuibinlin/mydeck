@@ -6,12 +6,17 @@
 //   http/           transport — Request/Response, CORS, cookies, routing
 //   services/       domain logic — (env, args) in, data out, throws AppError
 //   ai/             model access — providers, callModel, structured generation
-//   integrations/   third-party APIs — Resend, GitHub
-//   tools/          agent-callable wrappers around services
+//   integrations/   third-party APIs — Resend, GitHub, the agent service
+//
+// tools/ was the sixth layer and is gone with §11 step 9: the agent that called
+// those wrappers now runs in services/agent-service, and it asks rather than
+// acts (architecture.md §8.2). What it asks for is materialised by
+// services/tutor.js through the same services an HTTP route would call.
 //
 // The rule that keeps this useful: services/ never imports from http/. That is
-// what lets an agent tool, a test, and an HTTP route all call the same
-// function without faking a Request.
+// what lets a test and an HTTP route call the same function without faking a
+// Request — and it is what made moving the loop out of process a change to one
+// file rather than to the layer.
 
 import { json, preflight, errorResponse } from "./http/respond.js";
 import { createRouter } from "./http/router.js";
@@ -20,14 +25,13 @@ import { routes } from "./http/routes/index.js";
 const match = createRouter(routes);
 
 export default {
-  // `ctx` is threaded no further than the handler that asks for it.
-  //
-  // It exists for one thing: work that must outlive the response, which today
-  // means the agent service's shadow comparison. Handlers that do not need it
-  // simply ignore the fourth argument, and nothing below http/ ever receives the
-  // context object itself — routes/zh.js passes `ctx.waitUntil` down as a bound
-  // function, so services/ keeps taking (env, args) and stays callable from a
-  // tool or a test with no runtime object to fake.
+  // `ctx` is passed to handlers and no further. Nothing currently reads it:
+  // shadow mode was its only user and went with §11 step 9. It stays in the
+  // signature because a handler needing work that outlives the response is a
+  // normal thing to want, and the rule for when that happens is worth keeping
+  // written down — pass `ctx.waitUntil` down as a bound function, never the
+  // context object, so services/ keeps taking (env, args) and stays callable
+  // from a test with no runtime object to fake.
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") return preflight(request);
 

@@ -55,13 +55,21 @@ describe("a word gets a card", () => {
     expect(data.dataset).toBe("2026-04-11");
   });
 
-  // The test config has no [ai] binding, so the tutor cannot run here. That
-  // makes this the cheapest possible proof of the property the whole design
-  // rests on: with the model completely unavailable, the answer is still
-  // complete and still 200. Nothing about the card changes.
+  // The property the whole design rests on: with the tutor completely
+  // unavailable the answer is still complete and still 200. Nothing about the
+  // card changes.
+  //
+  // §11 step 9 raised the stakes rather than lowering them. There used to be a
+  // second implementation in this process, so a bad status fell through to it
+  // and only a timeout reached here. Now every failure does, and the floor
+  // holding is the whole reason that was safe to do.
+  //
+  // The agent stub reads its scenario from the LAST word of the message
+  // (backend/vitest.config.mjs), so one turn can ask about 书 and fail the
+  // service at the same time.
   it("returns a full answer when the tutor is unavailable", async () => {
     const { token } = await user();
-    const { status, data } = await turn(token, "书");
+    const { status, data } = await turn(token, "书 server_error");
 
     expect(status).toBe(200);
     expect(data.agent.unavailable).toBe(true);
@@ -69,10 +77,15 @@ describe("a word gets a card", () => {
     expect(data.cards[0].pinyin.toLowerCase()).toBe("shū");
   });
 
+  // The other way the hop fails: a 200 carrying something that is not the
+  // contract. Worth its own case because it fails in a different place — the
+  // envelope parse rather than the status check — and both have to land as
+  // enrichment that did not arrive, never as an error the learner sees.
   it("never surfaces the model's failure as an error status", async () => {
     const { token } = await user();
-    const { status } = await turn(token, "翻译");
+    const { status, data } = await turn(token, "翻译 not_json");
     expect(status).toBe(200);
+    expect(data.agent.unavailable).toBe(true);
   });
 });
 
@@ -185,15 +198,33 @@ describe("a word outside the vocabulary", () => {
 });
 
 describe("quota", () => {
-  it("does not spend an AI generation — lookups must work at zero balance", async () => {
-    const { user: u, token } = await user();
-    await turn(token, "书");
+  // This used to assert that a lookup spends nothing. That was never a product
+  // property — it was an artifact of the test config having no [ai] binding, so
+  // the in-process loop could not run and logged nothing. In production a turn
+  // has always called the model, and since §11 step 9 it calls the agent
+  // service, which reports the calls it made and gets one ai_usage_log row each
+  // (agentComposition.test.js pins the accounting itself).
+  //
+  // What survives is what the old title was reaching for. Cards come from the
+  // deterministic lookup, which needs no model and no budget — so the
+  // dictionary half of this tab keeps working after the daily limit is gone,
+  // which is what makes having a daily limit acceptable at all.
+  it("still answers with a card at zero balance", async () => {
+    const { token } = await user();
 
-    const { n } = await requestJson("/api/ai/settings", { token }).then((r) => ({
-      n: r.data.usage.used,
-    }));
-    expect(n).toBe(0);
-    expect(u.id).toBeDefined();
+    // AI_DAILY_LIMIT_FREE is 3 in test/wrangler.test.toml and the stub reports
+    // one model call per turn, so three turns is exactly the budget.
+    for (let i = 0; i < 3; i++) await turn(token, "书");
+
+    const { status, data } = await turn(token, "书");
+
+    expect(status).toBe(200);
+    // "quota", not "error" — the client says "you are out of AI for today"
+    // rather than "something went wrong", and only this field can tell it which.
+    expect(data.agent.unavailable).toBe(true);
+    expect(data.agent.reason).toBe("quota");
+    expect(data.cards[0].found).toBe(true);
+    expect(data.cards[0].pinyin.toLowerCase()).toBe("shū");
   });
 });
 

@@ -6,36 +6,39 @@ Why it exists, what it may and may not do, and how it gets deployed are all in
 [docs/architecture.md](../../docs/architecture.md). Read §6-§8 before changing
 anything here. This file is only how to run it.
 
-**Status: serving real turns for one allowlisted account (§11 step 7).**
-`create_agent` over five tools, a scripted provider for tests, HSK through the
-existing MCP server. Running as `mydeck-agent-prod` in `asia-southeast1`, warm at
-`min_instances = 1`, behind `aisingapore/Qwen-SEA-LION-v4-32B-IT`.
-`mydeck-agent-dev` still exists — it is the target for local `wrangler dev` and
-somewhere to push an image before trusting it.
+**Status: this is the tutor (§11 complete).** `create_agent` over five tools, a
+scripted provider for tests, HSK through the existing MCP server. Running as
+`mydeck-agent-prod` in `asia-southeast1`, warm at `min_instances = 1`, behind
+`aisingapore/Qwen-SEA-LION-v4-32B-IT`. `mydeck-agent-dev` still exists — it is
+the target for local `wrangler dev` and somewhere to push an image before
+trusting it.
+
+Step 9 deleted the Worker's own agent loop, so **there is no fallback**. Every
+failure of this service costs the learner the tutor's prose — not just a timeout,
+which is all that used to degrade. What it cannot cost is the answer:
+`routes/zh.js` renders the word cards from the Worker's bundled dictionary before
+this service is called at all.
+
+Which makes the open latency question sharper than it was. Warm turns run
+1.7–2.8s, but one took 29.8s, hit the 20s deadline and returned an empty message
+(architecture.md §13). That is now a learner losing a reply rather than a tester
+noting a number.
 
 Verified by a write landing rather than by an absence of errors: a turn asked to
 save, Cloud Run answered 200 in 3.2s, and two rows appeared in D1 four seconds
 later — with correctly formed Chinese, so the indices-not-characters contract
 (§7.2) held through a real model.
 
-Everyone not in `AGENT_ALLOWED_USERS` is still served by the Worker's own
-JavaScript loop.
-
-What is *not* done: step 8, widening it past the allowlist. The infrastructure
-reason is gone; what remains is evidence. Warm turns run 1.7–2.8s, but one took
-29.8s and hit the 20s deadline with an empty message, and through the Worker
-that costs the learner the prose entirely (architecture.md §13).
-
-Also still unproven: the `deck_name` branch, where the agent asks for a *new*
-draft deck instead of writing into one already offered.
+Still unproven: the `deck_name` branch, where the agent asks for a *new* draft
+deck instead of writing into one already offered.
 
 **The first real turn found a prompt defect that every test had missed.** Asked
 "什么是水" with nothing seeded, the model skipped `hsk_lookup` and asserted 水 is
 not in HSK — it is HSK 1. The prompt forbade *stating* unsourced facts but never
 required the *call*, and it supplied the exact sentence to use on a `found:false`
-result, so the model reached for that sentence without earning it. Fixed in both
-languages and pinned by `tests/test_prompt_parity.py`. A scripted model could
-never have caught it: it calls the tool because the script says to.
+result, so the model reached for that sentence without earning it. Fixed, and
+pinned by `tests/test_prompt.py`. A scripted model could never have caught it: it
+calls the tool because the script says to.
 
 ## The one rule
 
@@ -113,7 +116,7 @@ where the reasoning lives.
 | `AGENT_SERVICE_SECRET` | Secret Manager | Required. Unset **and** on Cloud Run → 503, deliberately. |
 | `K_REVISION`, `K_SERVICE` | Cloud Run | Build identity, and how "am I deployed?" is answered. |
 | `AGENT_DEADLINE_S` | you | 20s. Must stay under the Worker's `AGENT_SERVICE_TIMEOUT_MS`. |
-| `AGENT_MAX_STEPS`, `AGENT_MAX_TOOL_CALLS` | you | 4 and 6, mirroring `ai/agentLoop.js`. |
+| `AGENT_MAX_STEPS`, `AGENT_MAX_TOOL_CALLS` | you | 4 and 6, the limits the Worker's loop used before it was deleted. |
 | `AI_PROVIDER`, `AI_TUTOR_MODEL`, `AI_BASE_URL`, `AI_API_KEY` | Secret Manager | The model. `scripted` needs none of them. |
 | `HSK_MCP_URL`, `HSK_TIMEOUT_S` | you | The dictionary. |
 | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL` | Secret Manager | Tracing. Absent → off. |
@@ -141,7 +144,10 @@ main.py                     the door: /health, /version, the secret gate
 
 `create_agent` owns the loop. That is the whole point of the framework — the
 Worker's `ai/agentLoop.js`, `ai/toolMessages.js` and most of `tools/repair.js`
-have no counterpart here, and should not grow one.
+never got a counterpart here, and none should grow one. Those files are deleted
+now (§11 step 9), so this is guidance rather than a comparison: when the
+framework already does a thing, do not reimplement it here because the Worker
+once did.
 
 What the framework does **not** do, all of it in `state.py` and `run.py`:
 
@@ -168,10 +174,22 @@ carries on — finishing model calls nobody will read, spending provider budget 
 an abandoned request, and holding a Cloud Run instance that `max_instances: 2`
 cannot spare.
 
-It reports `stopped_by: "step_limit"`, never an error. An error tells the Worker
-this failed *fast*, and the Worker answers a fast failure by running its own
-loop — making the learner wait a second time for a turn that was already too
-slow. A deadline is a completed turn that ran out of room.
+It reports `stopped_by: "step_limit"`, never an error, and carries whatever
+prose the model had already addressed to the learner. A deadline is a completed
+turn that ran out of room, and since §11 step 9 an error costs the learner the
+reply outright — there is no second implementation behind this one.
+
+That prose comes off `RunMeter`, not off the returned messages: a run stopped at
+the deadline raises, so `ainvoke` returns nothing at all. Only text from a
+message that made no tool call counts — "let me look that up" offered as a whole
+reply promises something that never arrives.
+
+**The clock covers the whole turn.** It used to wrap only the graph call, so the
+`answered_after_cap` rescue ran outside it — a turn could spend the full 20s in
+the loop and then start a fresh model call, which is the exact behaviour the
+deadline exists to prevent. Any model call added here belongs under the same
+`_Clock`, and the rescue also carries the system prompt explicitly, because
+`create_agent` keeps it out of the message list.
 
 Two things the HSK layer must keep doing, both measured, both in `hsk/project.py`:
 

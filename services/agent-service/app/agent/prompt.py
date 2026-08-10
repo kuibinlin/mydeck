@@ -1,8 +1,19 @@
-"""The system prompt.
+"""The system prompt. The only copy.
 
-Ported from backend/src/services/tutor.js, with one addition that is the whole
-reason the contract looks the way it does: the known words are NUMBERED, and
-every instruction about acting on them says to use the number.
+It was ported from backend/src/services/tutor.js and lived in both languages
+through §11, with tests/test_prompt_parity.py holding the copies together — a
+safety rule fixed in one language and forgotten in the other is worse than a
+rule in neither, because it looks fixed. That test earned its place: it caught
+the prompt telling the model what to SAY when a lookup reported found:false
+without ever requiring the lookup, in both copies at once.
+
+Step 9 deleted the Worker's loop, so this is now the prompt. Nothing is left to
+diverge from, and tests/test_prompt.py pins the load-bearing rules against this
+file alone.
+
+One thing here was never in the Worker's copy, and it is the reason the contract
+looks the way it does: the known words are NUMBERED, and every instruction about
+acting on them says to use the number.
 
 This model corrupts Chinese it retypes — measured in the Worker: 翻译 became
 翰译, 医院 became 疒馆, 饭物 for "food words". A model that never retypes a

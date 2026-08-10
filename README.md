@@ -19,8 +19,8 @@ with AI, build challenge quizzes, and compare scores on the leaderboard.
 mydeck/
 ├── frontend/          React 19 + Vite SPA          → Cloudflare Pages
 ├── backend/           Cloudflare Worker (API)      → Cloudflare Workers
-├── infrastructure/    Terraform (scaffolding only)
-├── .github/           CI/CD workflows (scaffolding only)
+├── infrastructure/    Terraform — GCP, Cloudflare, GitHub
+├── .github/           CI/CD — ci, deploy-api, deploy-agent, scan
 └── docs/              setup, development, deployment, reference
 ```
 

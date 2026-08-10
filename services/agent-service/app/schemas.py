@@ -77,8 +77,12 @@ MAX_MESSAGES = 13  # 6 {q,a} pairs + the current turn — conversation.js MAX_PA
 MAX_MESSAGE_CHARS = 4000  # http/routes/zh.js MAX_MESSAGE_CHARS
 MAX_KNOWN_WORDS = 32  # seed + carried words; conversation.js caps carried at 12
 MAX_DECKS = 50
-MAX_ACTIONS = 4  # agentLoop.js maxSteps — one action per step is already generous
-MAX_STEPS = 6  # agentLoop.js maxToolCalls
+MAX_ACTIONS = 4  # one action per step is already generous
+MAX_STEPS = 6  # the tool budget, config.max_tool_calls
+# What tutor.js loops on, one ai_usage_log row per call, so it is bounded on
+# both sides — integrations/agentService.js MAX_MODEL_CALLS. A turn is about
+# max_steps + 1 calls plus the rescue; this is headroom, not a target.
+MAX_MODEL_CALLS = 12
 MAX_SAVE_WORDS = 20  # services/deckSave.js MAX_SAVE
 MAX_ACTIVITY_WORDS = 12  # services/activities.js MAX_ITEMS
 MAX_DISCOVERED_WORDS = 24
@@ -275,7 +279,7 @@ class Usage(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    model_calls: int = Field(ge=0)
+    model_calls: int = Field(ge=0, le=MAX_MODEL_CALLS)
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
 

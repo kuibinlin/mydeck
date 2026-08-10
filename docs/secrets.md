@@ -175,11 +175,17 @@ There is **no zero-downtime order**, because the agent compares against exactly
 one expected value. Whichever side you update first, the two disagree until the
 other catches up.
 
-What saves you is that the disagreement is graceful. A rejected request returns a
-status error, `integrations/agentService.js` tags it `.reason = "status"`, and
-everything except a timeout **falls through to the JavaScript tutor loop**. So
-the rotation window costs the Python path, not the answer — learners get the JS
-tutor and notice nothing.
+The disagreement is graceful but **no longer free**. A rejected request returns
+a status error and `integrations/agentService.js` tags it `.reason = "status"`;
+that used to fall through to the Worker's own tutor loop, which architecture.md
+§11 step 9 deleted. So the rotation window now costs the tutor's prose: for its
+duration, `routes/zh.js` answers with the word cards alone.
+
+That is a degraded answer, not a broken one — the cards are resolved from the
+bundled dictionary before the tutor is called, so nothing incorrect reaches the
+learner. But keep the window short and do it when nobody is studying. The proper
+fix is on the open list (§13): the agent accepting both the current and previous
+secret during a rotation.
 
 ```bash
 # 1. New value
@@ -212,9 +218,14 @@ gcloud secrets versions disable <OLD> --secret=mydeck-agent-dev-service-secret \
 Disable before destroy. A disabled version can be re-enabled if the rotation
 turns out to have been wrong; a destroyed one cannot.
 
-**While `AGENT_ENABLED` is false — which is the shipping state — rotation has no
-user-visible effect at all.** Nothing calls the agent. Rotate freely now; the
-sequence above matters from §11 step 7 onward.
+**There is no longer a flag that makes this free.** `AGENT_ENABLED` used to be
+false in the shipping state, so nothing called the agent and rotation had no
+user-visible effect; it went with the second implementation in §11 step 9. Every
+turn goes through this secret now, so follow the order above rather than
+rotating either side on its own.
+
+The dev secret is the exception, and it is a genuine one: nothing in production
+points at `mydeck-agent-dev`. Rotate that freely.
 
 ---
 

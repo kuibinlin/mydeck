@@ -7,7 +7,7 @@ mydeck/
 ├── frontend/          React 19 + Vite SPA          → Cloudflare Pages
 ├── backend/           Cloudflare Worker (API)      → Cloudflare Workers
 ├── services/          Python containers            → Google Cloud Run
-├── infrastructure/    Terraform — GCP applied; Cloudflare/GitHub not written
+├── infrastructure/    Terraform — GCP, Cloudflare and GitHub root modules
 ├── .github/           CI/CD — ci.yml (checks only); no deploy workflow yet
 ├── docs/              you are here
 └── <root>             workspace manifest + repo-wide config
@@ -100,7 +100,7 @@ backend/
 ├── migrations/                 numbered, for databases that already exist
 ├── scripts/build-hsk-index.mjs regenerates the offline dictionary
 ├── vitest.config.mjs           workerd pool + outbound network interceptor
-├── test/                       27 files, real local D1 + KV
+├── test/                       25 suites, real local D1 + KV
 └── src/
     ├── index.js                entry: preflight, dispatch, error mapping
     ├── config.js               PROD_ORIGINS
@@ -114,27 +114,32 @@ backend/
     │   ├── deckLinks.js aiContent.js tutor.js hsk.js activities.js deckSave.js
     │   └── zh/                 classify, resolve, localIndex, conversation,
     │                           data/hsk-core.json (424 KB, committed)
-    ├── ai/                     model access
+    ├── ai/                     model access — the NON-agentic path only
     │   ├── providers/          cloudflare, openaiCompat, anthropic
-    │   ├── callModel.js agentLoop.js generateStructured.js toolMessages.js
+    │   ├── callModel.js generateStructured.js
     │   ├── extract.js schemas.js usage.js prompts/
-    ├── integrations/           resend, github, hskMcp
-    └── tools/                  agent-callable wrappers
-        ├── registry.js repair.js
-        └── defs/               one object per tool, each delegating to a service
+    └── integrations/           resend, github, hskMcp, agentService
 ```
+
+`ai/` has no loop and there is no `tools/`. `agentLoop.js`, `toolMessages.js` and
+the whole tool registry were deleted by architecture.md §11 step 9 — the agent
+that called them is `services/agent-service` now, and it *asks* rather than acts.
+What is left of `ai/` serves flashcard and quiz generation, which never moved:
+one model call, no tools, JSON extracted and validated.
 
 The layering rules are the load-bearing part, and they are documented in full in
 `CLAUDE.md`. In short:
 
 - `services/` never imports from `http/` — no Request, no Response, no CORS. That
-  is what lets an HTTP route, an agent tool and a test call the same function.
+  is what lets an HTTP route and a test call the same function, and what made
+  moving the agent out of process a deletion rather than a refactor.
 - `http/` only adapts: parse input → call service → shape response.
-- `tools/` holds no business rules; every `execute()` delegates to a service, so
-  agents and routes enforce identical limits and ownership.
 - `ai/` imports nothing from `services/` except `services/errors.js`.
-  `services/tutor.js` is the one composition point that imports both `ai/` and
-  `tools/`.
+  `services/tutor.js` is the composition point: it calls
+  `integrations/agentService.js` for the turn, then the same services an HTTP
+  route would call to materialise what comes back. That is why an agent and a
+  route enforce identical limits and ownership — there is one implementation of
+  each, not a parallel set for tools.
 
 ---
 
@@ -175,27 +180,34 @@ services/
     └── Dockerfile              two-stage, non-root, reads $PORT
 ```
 
-**Status: answering for one account, writes included.** `docs/architecture.md`
-§11 is the sequence, and steps 1–7 are done. `mydeck-agent-dev` runs on Cloud
-Run, the Worker calls it for the accounts in `AGENT_ALLOWED_USERS`, and a save
-it asked for reached D1 with correctly formed Chinese. Everyone else is on the
-JavaScript loop, which stays authoritative until step 8.
+**Status: this is the tutor.** `docs/architecture.md` §11 is the sequence and
+all nine steps are done. `mydeck-agent-prod` runs warm at `min_instances = 1` and
+answers in 1.7–2.8s; `mydeck-agent-dev` is the target for local `wrangler dev`
+and for images not yet trusted.
 
-Step 8 no longer waits on infrastructure: `mydeck-agent-prod` runs warm at
-`min_instances = 1` and answers in 1.7–2.8s. It waits on evidence — one warm
-turn took 29.8s and returned nothing, and how often that happens decides whether
-the experience is good enough to give everyone (§13).
+There is no second implementation. Step 9 deleted the Worker's agent loop along
+with the three flags that chose between them, so `AGENT_SERVICE_URL` is the whole
+configuration: set, this answers; unset, the tutor is skipped. **Every failure of
+this hop costs the learner the tutor's prose** — a transport error, a bad status,
+an unreadable body and a policy refusal all degrade now, where only a timeout
+used to. The word cards are rendered from the bundled dictionary before the
+tutor is called at all, and that floor is what made the deletion safe.
+
+Still open, and now without a net: one warm turn measured 29.8s and returned
+nothing (§13). `observability/`'s p95 alert watches for a sustained regression;
+individual occurrences show as `[zh] tutor unavailable` in `wrangler tail`.
 
 Three things about it that are decisions rather than details:
 
 - **The Worker owns every write.** The agent returns *intended actions* naming
   words by index into a list the Worker supplied. It never touches D1, never
   resolves Chinese, and never decides whether a save is authorised (§6, §8.2).
-- **The agent stack is LangChain**, not a hand-rolled loop. `create_agent` runs
-  the loop, so `ai/agentLoop.js`, `ai/toolMessages.js` and most of
-  `tools/repair.js` have no Python counterpart. What the framework does not have
-  — the allowlist at execution time, the tool budget, seed interception, save
-  attempts counted before refusal — is all in `app/agent/state.py`.
+- **The agent stack is LangChain**, not a hand-rolled loop and not a port of the
+  Worker's. `create_agent` runs the loop, which is why the JavaScript originals
+  (`ai/agentLoop.js`, `ai/toolMessages.js`, `tools/repair.js`) got no Python
+  counterpart and were simply deleted. What the framework does not have — the
+  allowlist at execution time, the tool budget, seed interception, save attempts
+  counted before refusal — is all in `app/agent/state.py`.
 - **It is not wired into `npm test`.** `npm run test:agent`, `lint:agent`,
   `typecheck:agent` and `check:agent` exist and run from the root like everything
   else, but they need `uv` installed, and the JS suites must keep working on a

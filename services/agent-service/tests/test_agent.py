@@ -4,13 +4,15 @@ With the model's judgement out of the picture, what is left under test is the
 wiring: did the tool run, did the result come back, did the right intended
 action fall out, and does the response say honestly what happened.
 
-Same approach as backend/test/tutor.test.js, which scripts `callModel` for the
-same reason.
+Same approach the Worker's own tutor tests took by scripting `callModel`,
+before §11 step 9 deleted the loop they drove. backend/test/agentComposition.test.js
+is what covers the Worker's half now, scripting this service instead.
 """
 
 from typing import Any
 
 import pytest
+from langchain_core.messages import SystemMessage
 
 from app.agent.run import run_turn
 from app.providers.scripted import ScriptedChatModel, calls, says
@@ -195,6 +197,42 @@ class TestStopping:
 
         assert response.message == "医院 is the word you want."
         assert response.stopped_by == "answered_after_cap"
+
+    async def test_the_rescue_reply_is_written_under_the_system_prompt(
+        self, make_request, agent_config
+    ):
+        """The one reply in a turn that used to have no rules at all.
+
+        `create_agent` takes the system prompt as `system_prompt` and never puts
+        it in the message list, so the rescue call — a bare `chat.ainvoke` —
+        was a fresh conversation carrying only the learner's turns and "stop
+        calling tools". Everything prompt.py enforces was absent from exactly
+        the reply the model writes when it is out of steps and has to commit.
+
+        Asserted on the message list the model was handed, not on the answer:
+        what a model does with the rules is its business, whether it was given
+        them is ours.
+        """
+        model = ScriptedChatModel(
+            script=[
+                calls("hsk_search", {"query": "hospital"}),
+                says(""),
+                says("医院 is the word you want."),
+            ]
+        )
+        response = await run_turn(make_request(), model=model, config=agent_config)
+        assert response.stopped_by == "answered_after_cap"
+
+        rescue = model.seen[-1]
+        system = " ".join(
+            " ".join(str(m.content).split()) for m in rescue if isinstance(m, SystemMessage)
+        )
+
+        assert "call hsk_lookup before saying anything about it" in system
+        assert "never offer to publish" in system
+        assert "only calling save_words_to_deck" in system
+        # And still the thing the rescue exists to say.
+        assert "Stop calling tools" in system
 
     async def test_a_model_failure_is_reported_not_raised(self, make_request, agent_config):
         class Broken(ScriptedChatModel):

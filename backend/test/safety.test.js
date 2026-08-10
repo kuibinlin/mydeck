@@ -17,9 +17,12 @@ describe("test isolation", () => {
   it("points the agent service at the stubbed host, not a real one", () => {
     // Any other host reaches the default-deny below rather than the scenario
     // stub, so a typo here would silently turn every agent test into a 503.
+    //
+    // This matters more since §11 step 9 than it did before it. There used to
+    // be a second implementation in this process and a set of flags choosing
+    // between them, so a mispointed URL fell through to the JavaScript loop and
+    // the suite stayed green. Now this host is the only tutor there is.
     expect(env.AGENT_SERVICE_URL).toBe("https://agent.test.invalid");
-    expect(env.AGENT_ENABLED).toBe("false");
-    expect(env.AGENT_SHADOW).toBe("false");
   });
 
   it("has no Workers AI binding, so no test can incur inference charges", () => {
