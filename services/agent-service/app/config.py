@@ -3,8 +3,8 @@
 Read per call rather than at import, so a test can set one variable and get the
 behaviour it wants without reloading the module.
 
-The two caps mirror backend/src/ai/agentLoop.js exactly, and both numbers have a
-reason there that survives the move:
+The two caps came from backend/src/ai/agentLoop.js, which §11 step 9 deleted.
+Both numbers were measured there and neither reason depended on that loop:
 
     MAX_STEPS       4   the deepest real task is lookup → list → activity →
                         answer. A model that has not converged by four is

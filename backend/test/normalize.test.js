@@ -4,7 +4,14 @@
 // tool calls has `content: null`. A null check that rejects that branch drops
 // through to the raw-payload fallback, which puts the entire API envelope into
 // `text` and loses finish_reason. Measured against
-// @cf/meta/llama-3.3-70b-instruct-fp8-fast, which is what the agent loop uses.
+// @cf/meta/llama-3.3-70b-instruct-fp8-fast.
+//
+// Nothing in this Worker asks for tools any more — §11 step 9 moved the tutor to
+// services/agent-service, and generateStructured never passed any. These cases
+// stay because `normalize()` maps whatever the provider sends, not whatever we
+// asked for: a model that volunteers a tool call, or an account whose gateway
+// injects one, still must not render an API envelope to a learner. The cost of
+// keeping them is four assertions; the cost of the bug was a user-visible one.
 
 import { describe, it, expect } from "vitest";
 import { normalize } from "../src/ai/providers/cloudflare.js";

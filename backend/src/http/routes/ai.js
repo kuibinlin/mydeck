@@ -1,6 +1,7 @@
 // AI routes are thin on purpose: validation, quota, prompting and usage
-// logging all live in services/aiContent.js, so an agent tool can perform the
-// same generation without going through HTTP.
+// logging all live in services/aiContent.js, so a test can perform the same
+// generation without going through HTTP. An agent tool used to be the other
+// caller; `tools/` went in §11 step 9 and the split is worth keeping anyway.
 
 import { json } from "../respond.js";
 import { readBody } from "../body.js";

@@ -10,7 +10,10 @@ export default defineConfig([
   // Patterns are globbed from here, so they need `**/` to reach into
   // frontend/ and backend/. `.wrangler` holds generated dev-server bundles,
   // not source; `.terraform` is provider plugins vendored by `terraform init`.
-  globalIgnores(['**/dist', '**/.wrangler', '**/.terraform']),
+  // `.claude/workflows` holds agent-orchestration scripts that are not ESM —
+  // they run in a harness that allows top-level `return`, so ESLint reads every
+  // one of them as a syntax error.
+  globalIgnores(['**/dist', '**/.wrangler', '**/.terraform', '.claude/workflows']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

@@ -1,23 +1,33 @@
-# Architecture — current state and proposed direction
+# Architecture — the migration, and the record of how it was done
 
-> **Status: §11 steps 1–7 done. Python answers for one allowlisted account and
-> its writes reach D1. Everyone else is on the JavaScript tutor.**
+> **Status: §11 complete — all nine steps. The 中文 tutor is
+> `services/agent-service` on Cloud Run and nothing else. The Worker's own agent
+> loop is deleted, so there is no fallback: every failure of that hop costs the
+> learner the tutor's prose, and the word cards are the floor that makes it safe.**
 >
-> [structure.md](structure.md) describes what the repository *is* today. This
-> document describes where it is *going*, and it is now mostly built and mostly
-> connected: contract, tests, Python loop, composition path, GCP infrastructure,
-> a Cloud Run service with a real model behind it, and a Worker that calls it.
-> What remains is widening the allowlist (step 8). The infrastructure reason is
-> gone — `mydeck-agent-prod` is warm and serving. What gates it now is evidence:
-> how often a turn is slow enough to time out and leave a learner with no prose
-> (§13).
+> [structure.md](structure.md) describes what the repository *is*. This document
+> described where it was *going*, and it arrived — so read it as a decision
+> record. §1 is deliberately left in the past tense: it is the starting state
+> every later argument reasons *from*, and updating it would turn those arguments
+> into conclusions about a system that never existed.
 >
-> Last revised: 2026-08-09. Every number and import claim below was measured
-> against the tree at that date; re-measure before trusting them.
+> The parts that are still live guidance rather than history: §5 (what may cross
+> the boundary), §7 (the contract), §8 (the decisions), §9–§10 (CI/CD and
+> secrets), §13 (what is still open — and turn latency is now a live defect with
+> nothing behind it).
+>
+> Last revised: 2026-08-10. Every number and import claim below was measured
+> against the tree at the date it was written; re-measure before trusting them.
 
 ---
 
 ## 1. Today
+
+> **This section describes the state this document set out to change, before
+> §11.** It is left in the past tense rather than updated, because everything
+> after it is an argument *from* this starting point and rewriting it would make
+> those arguments read as conclusions about a system that no longer exists. For
+> what runs now, see §3 (target — reached) and §11 step 9.
 
 ```
 Browser
@@ -31,32 +41,36 @@ Cloudflare Worker ─── the entire API (backend/)
    └── HSK       optional service binding → dictionary Worker
 ```
 
-One Worker holds authentication, authorisation, all business logic, both AI
-paths and every database write. It is the whole backend and the whole security
+One Worker held authentication, authorisation, all business logic, both AI paths
+and every database write. It was the whole backend and the whole security
 boundary.
 
 ### The two AI paths
 
-They are already separate — this matters more than anything else in this
-document, so it is stated first:
+They were already separate — this matters more than anything else in this
+document, so it is stated first. The separation is why one of them could leave
+without the other noticing:
 
 ```
 NON-AGENTIC   routes/ai.js → aiContent.js → generateStructured → callModel
               no tools, one model call, JSON extracted and validated
               3 endpoints: generate-flashcards, generate-vocab,
                            generate-comprehension
+              ── unchanged, still in the Worker ──
 
 AGENTIC       routes/zh.js → tutor.js → runAgent → callModel ⇄ execute
               tools attached, 1–4 model calls per turn
               1 endpoint: POST /api/zh/turn
+              ── now routes/zh.js → tutor.js → the agent service ──
 ```
 
-`services/aiContent.js` imports neither `agentLoop` nor `registry`. The
-separation is real and already enforced by the module graph.
+`services/aiContent.js` imported neither `agentLoop` nor `registry`. The
+separation was real and enforced by the module graph, which is what §4 measured.
 
-The configuration agrees: `AI_MODEL` and `AI_TUTOR_MODEL` are independent vars,
-and quota accounting already differs — `aiContent` logs once per request, while
-`tutor.respond` writes one `ai_usage_log` row per model step.
+The configuration agreed: `AI_MODEL` and `AI_TUTOR_MODEL` were independent vars,
+and quota accounting already differed — `aiContent` logs once per request, while
+`tutor.respond` writes one `ai_usage_log` row per model call. Both are still
+true; the tutor's count now arrives from another process.
 
 ---
 
@@ -139,7 +153,11 @@ Artifact Registry, Secret Manager and Terraform are not containers.
 
 ## 4. The extraction boundary
 
-The agentic subtree has exactly one entry point. Measured:
+**Cut, as of §11 step 9.** The right-hand column below is deleted from the
+Worker; the left-hand column is untouched and still runs there. This section is
+kept because the *reason* the cut was cheap is a property worth not losing.
+
+The agentic subtree had exactly one entry point. Measured, before the cut:
 
 ```
 ai/toolMessages.js  ←  imported ONLY by ai/agentLoop.js
@@ -147,10 +165,12 @@ ai/agentLoop.js     ←  imported ONLY by services/tutor.js
 tools/registry.js   ←  imported ONLY by services/tutor.js
 ```
 
-This is a subtree to cut, not a graph to untangle — a direct consequence of the
-existing rule that `ai/` imports nothing from `services/` except `errors.js`.
+That made it a subtree to cut, not a graph to untangle — a direct consequence of
+the existing rule that `ai/` imports nothing from `services/` except `errors.js`.
+Keep that rule. It is what turned "move the agent out of process" into a
+deletion rather than a refactor.
 
-| Stays in the Worker | Moves to Python |
+| Stayed in the Worker | Moved to Python |
 |---|---|
 | `services/aiContent.js` + its 3 endpoints | `services/tutor.js`'s `runLocal` |
 | `ai/generateStructured.js`, `extract.js`, `schemas.js`, `prompts/` | `ai/agentLoop.js` |
@@ -158,17 +178,18 @@ existing rule that `ai/` imports nothing from `services/` except `errors.js`.
 | `ai/usage.js` (quota — writes D1) | `tools/` (registry, repair, defs) |
 | **`services/tutor.js` itself** | |
 
-**The last row is the one to get right.** This table originally put the whole of
-`services/tutor.js` in the right-hand column, and that is wrong in a way that
-would delete the write path if followed. What moves is the *loop* — `runLocal`
-and what only it uses. What stays is everything the Worker must keep doing:
-`agentMode`, `runRemote`, the four policy checks, action materialisation and
-`saveFailed`.
+**The last row is the one that had to be right.** This table originally put the
+whole of `services/tutor.js` in the right-hand column, and that is wrong in a way
+that would have deleted the write path if followed. What moved was the *loop* —
+`runLocal` and what only it used. What stayed is everything the Worker must keep
+doing: `runRemote`, the four policy checks, action materialisation and
+`saveFailed`. (`agentMode` was on that list too, and went with the flags — with
+one implementation there is no mode to pick.)
 
 That is §8.2 — **the Worker writes, the agent asks** — and it is the reason the
 agent can be given a model with no database, no session and no way to know
-whether a save is authorised. Moving `tutor.js` would move the thing that
-decides. The file gets smaller; it does not leave.
+whether a save is authorised. Moving `tutor.js` would have moved the thing that
+decides. The file got smaller; it did not leave.
 
 ### The cost of this cut
 
@@ -237,10 +258,13 @@ the tutor path and the obvious assumption is that it moves.
 **The Worker is the only writer to D1.** The agent service returns structured
 results; the Worker validates them and performs every write.
 
-This is the same rule the Worker already enforces internally — `tools/` contains
-no business rules, and every `execute()` delegates to a service so that agents
-and HTTP routes enforce identical limits and ownership. Extending it one process
-outward keeps ownership, quota and limit enforcement in exactly one place and one
+This was the same rule the Worker already enforced internally, back when it had
+tools of its own: `tools/` held no business rules and every `execute()`
+delegated to a service, so an agent and an HTTP route enforced identical limits
+and ownership. Step 9 deleted that layer, and the rule outlived it unchanged —
+`services/` is still the only place limits and ownership are decided, and
+`services/tutor.js` reaches it on the agent's behalf exactly as a route does.
+Extending it one process outward keeps enforcement in one place and one
 language.
 
 D1 does have an HTTP API, so giving Python direct write access is *possible*. It
@@ -304,18 +328,18 @@ Instead, the Worker supplies an indexed list and Python refers to positions in i
     { "i": 0, "simplified": "医院", "pinyin": "yīyuàn", "meaning": "hospital" },
     { "i": 1, "simplified": "银行", "pinyin": "yínháng", "meaning": "bank" }
   ],
-  "available_decks": [
+  "decks": [
     { "id": 1, "name": "HSK 3", "card_count": 45 }
   ]
 }
 
 // Python → Worker
 {
-  "text": "…the tutor's reply…",
+  "message": "…the tutor's reply…",
   "intended_actions": [
     { "type": "save_words_to_deck", "deck_id": 1, "word_refs": [0, 1] }
   ],
-  "model_calls": 3
+  "usage": { "model_calls": 3 }
 }
 ```
 
@@ -370,9 +394,17 @@ Cloudflare → Google External Application Load Balancer → Cloud Run
              optionally with the default run.app URL disabled
 ```
 
-This is a `run-prod/` decision and is listed in §13. `run-dev/` deliberately
-ships the public posture: it is reachable by one allowlisted account through a
-Worker whose flags are all off, and the secret is the control.
+This is a `run-prod/` decision and is listed in §13.
+
+**The secret is now the only control, and that changed under this section
+without it being rewritten.** `run-dev/` was described here as reachable by one
+allowlisted account through a Worker whose flags were all off — true at step 7,
+when `AGENT_ALLOWED_USERS` named a single address. Step 8 opened the tutor to
+every learner and step 9 deleted the flags, so the "one account" half of that
+sentence stopped being true twice over. Ingress is public, every learner's turn
+reaches the service, and `AGENT_SERVICE_SECRET` is what stands between the two.
+§13 has always said this correctly in the past tense; this section said the
+opposite in the present, which is the worse of the two to leave standing.
 
 ---
 
@@ -434,6 +466,13 @@ Accept going in that the port re-solves two problems already solved here:
 every call, and `toolMessages.js` exists because provider tool-message shapes
 differ. Pydantic AI and instructor handle both well, but this is re-solving, not
 avoiding.
+
+*Settled, in the end:* LangChain's `create_agent` absorbed both, so neither
+needed a Python counterpart — which is why `app/agent/state.py` holds only the
+things a framework does not give you (the allowlist checked where tools run, the
+tool budget, seed interception, `save_attempts` counted before any refusal).
+Step 9 then deleted the JavaScript originals, so the re-solving cost was paid
+once rather than carried.
 
 ### 8.4 Provider duplication is intentional — decided
 
@@ -627,11 +666,14 @@ and reusing one for both jobs hands CI the ability to rewrite DNS:
 
 ## 11. Sequencing
 
-**The JavaScript tutor stays live and authoritative until step 8.** Each step
-leaves the app fully working.
+**Done — all nine steps.** The JavaScript tutor stayed live and authoritative
+until step 8, and every step left the app fully working. What follows is kept as
+the record of how it got here, because the order was the point: each step could
+be reverted on its own, and step 9 is the only one that could not have been done
+early.
 
-Steps 1–7 are done. Both caveats this section used to carry are now resolved,
-and one of them resolved by finding a bug:
+The two caveats this section used to carry were both resolved before step 8, and
+one of them resolved by finding a bug:
 
 - **A real provider has been behind the loop.** `aisingapore/Qwen-SEA-LION-v4-32B-IT`
   via SEA-LION, called directly against the deployed service. It calls tools,
@@ -643,7 +685,9 @@ and one of them resolved by finding a bug:
   prompt forbade *stating* an unsourced fact but never required the *call*, and
   it supplied the sentence to use on a `found:false` result, so the model
   reached for that sentence without earning it. Both language copies had it.
-  Fixed, and pinned by `services/agent-service/tests/test_prompt_parity.py`.
+  Fixed, and pinned at the time by `test_prompt_parity.py`, which held the two
+  copies together. Step 9 removed the second copy; the rule itself is still
+  pinned, by `services/agent-service/tests/test_prompt.py`.
 
   **No scripted test could have caught this**, which is the argument for doing
   step 6 rather than trusting green suites: a scripted model calls the tool
@@ -700,42 +744,70 @@ and one of them resolved by finding a bug:
    Still unproven: the `deck_name` branch, where Python asks for a *new* draft
    deck rather than writing into one already offered. Creating a deck is the
    more consequential half of `save_words_to_deck`.
-8. **Make Python authoritative**, JS retained as rollback. One line:
+8. **Make Python authoritative**, JS retained as rollback — *done.* One line:
 
    ```diff
    -AGENT_ALLOWED_USERS = "kuibin.dev@gmail.com"
    +AGENT_ALLOWED_USERS = "*"
    ```
 
-   `"*"` is a wildcard rather than a reinterpretation of empty, and the
-   distinction is load-bearing. Treating an absent allowlist as universal would
+   `"*"` was a wildcard rather than a reinterpretation of empty, and the
+   distinction was load-bearing. Treating an absent allowlist as universal would
    mean a deleted line, a typo, or an unset variable in a fresh environment
-   silently moving every learner onto the remote path — the exact failure
-   `agentMode`'s "empty means nobody" rule exists to prevent, and which has its
-   own test. `"*"` cannot be arrived at by omission.
+   silently moving every learner onto the remote path. `"*"` cannot be arrived at
+   by omission.
 
-   `AGENT_ENABLED` still decides *whether* anyone moves; the allowlist only says
-   *who*. Both are in `backend/wrangler.toml`, committed, so this is a reviewable
-   PR with CI behind it and `git revert` as the rollback.
+   `AGENT_ENABLED` decided *whether* anyone moved; the allowlist only said *who*.
+   Both were in `backend/wrangler.toml`, committed, so this was a reviewable PR
+   with CI behind it and `git revert` as the rollback.
+9. **Delete the JS agent loop** — *done.* `runLocal` in `services/tutor.js`,
+   plus `ai/agentLoop.js`, `ai/toolMessages.js` and `tools/`: 828 lines of source
+   and four test files. Everything non-agentic stayed (§4) — flashcard and quiz
+   generation still run `generateStructured` → `callModel` in this process, and
+   `ai/providers/` still serves them.
 
-   **Gated on §13**, not on code: a warm turn measured 29.8s and returned an
-   empty message, which through the Worker is a 25s timeout degrading to the
-   cards. Today that costs one tester who knows why. At step 8 it costs whichever
-   learner draws the slow turn, silently. The rate is the decision.
-9. **Delete the JS agent loop** — `runLocal` in `services/tutor.js`, plus
-   `ai/agentLoop.js`, `ai/toolMessages.js` and `tools/` — after the rollback
-   window closes. **Keep everything non-agentic** (§4).
-
-   **`services/tutor.js` itself stays.** An earlier version of this list named it
-   for deletion, and following that literally would remove the write path:
-   `runRemote`, the four policy checks, the action materialisation and
+   **`services/tutor.js` itself stayed.** An earlier version of this list named
+   it for deletion, and following that literally would have removed the write
+   path: `runRemote`, the four policy checks, the action materialisation and
    `saveFailed` all live there. That is the Worker's half of §8.2 — *the Worker
    writes, the agent asks* — and it survives the migration by design. The file
-   gets smaller, not removed.
+   got smaller, not removed.
 
-   The gate is a count, not a date. Run step 8 for weeks and watch
-   `[agent] remote fallback`. If it never fires, the safety net is unused and
-   safe to remove; if it does, you learn why while it is still there.
+   The three flags went with the loop. `AGENT_ENABLED`, `AGENT_SHADOW` and
+   `AGENT_ALLOWED_USERS` all existed to choose between two implementations, and
+   with one there is nothing left to choose. What replaced them is a question
+   with an answer: is the service configured? An unset `AGENT_SERVICE_URL` skips
+   the tutor and answers with the cards, which is what makes `wrangler dev`
+   useful without a container.
+
+   **What this costs, stated plainly.** Every failure of the hop now costs the
+   learner the tutor's prose. Before, a transport error, a bad status, an
+   unreadable body or a policy refusal fell through to the in-process loop and
+   nobody noticed; only a timeout degraded. Now they all degrade. That is the
+   point of the step rather than a regression accepted alongside it — a fallback
+   nobody can observe firing is not a safety net, it is a second implementation
+   whose behaviour you have stopped checking.
+
+   **The floor did not move**, and it is the reason this was safe. `routes/zh.js`
+   resolves the word cards from the bundled dictionary *before* the tutor is
+   called, so a turn with no tutor at all is still a correct answer.
+   `zh.test.js` pins that against a 500, an unreadable body and an exhausted
+   quota.
+
+   **Two parity tests changed shape.** `test_prompt_parity.py` is gone — it held
+   the Worker's copy of the system prompt against Python's, and there is no
+   second copy now; the load-bearing rules are still pinned, against the one copy
+   (`test_prompt.py`). `test_tool_parity.py` is new and does the opposite: the
+   tool allowlist still exists in both languages, so it fails when they diverge,
+   in either direction.
+
+   The gate for this step was a count, not a date: run step 8 and watch
+   `[agent] remote fallback`. It was decided on the other argument instead —
+   with the remote path serving every learner, the fallback was a duplicate
+   implementation being maintained, tested and reasoned about for a case nobody
+   had observed. That is a defensible call and it is not the one this list
+   originally described; the honest summary is that the deletion was chosen for
+   simplicity rather than earned by data.
 
 Do not create Artifact Registry or Cloud Run before the container runs locally.
 
@@ -748,26 +820,29 @@ since it reads the outputs of `artifact-registry/`, `iam/` and `run-dev/` (§9.3
 remote state. If it grows past roughly sixty lines it has stopped being
 governance and started being Terraform for its own sake.
 
-> ### Shadow mode doubles AI consumption
+> ### Shadow mode doubled AI consumption — historical, step 6 only
 >
-> Every shadowed turn runs both implementations and discards one, so the spend is
-> two turns for one answer.
+> Kept because the reasoning generalises to the next thing that wants to run two
+> implementations at once, not because any of it is still live. Shadow mode went
+> with step 9.
 >
-> **Where that lands depends on which providers are configured**, and naming one
-> here goes stale the day it changes. With `AI_DEFAULT_PROVIDER="cloudflare"` it
-> is the **account-wide** Workers AI allowance — 10,000 neurons/day, roughly
-> 50–200 tutor turns at ~45 neurons per call and 1–4 calls per turn, then error
-> 4006 for everyone. With an API-key provider it is whatever `AI_API_KEY` bills.
-> The two sides can also be on different providers: the Worker reads
-> `AI_DEFAULT_PROVIDER`, the agent service reads its own `AI_PROVIDER`.
+> Every shadowed turn ran both implementations and discarded one, so the spend
+> was two turns for one answer.
 >
-> What it does **not** cost is the learner's quota. `shadow()` writes no
-> `ai_usage_log` row, so `AI_DAILY_LIMIT_FREE` is untouched and the per-user
-> limit does not halve. That was a requirement when this was written and is now
-> implemented — `tutor.js:840`.
+> **Where that landed depended on which providers were configured.** With
+> `AI_DEFAULT_PROVIDER="cloudflare"` it was the **account-wide** Workers AI
+> allowance — 10,000 neurons/day, roughly 50–200 tutor turns at ~45 neurons per
+> call and 1–4 calls per turn, then error 4006 for everyone. With an API-key
+> provider it was whatever `AI_API_KEY` billed. The two sides could also be on
+> different providers: the Worker read `AI_DEFAULT_PROVIDER`, the agent service
+> reads its own `AI_PROVIDER`.
 >
-> So: shadow **only** your own account. A global `AGENT_SHADOW` doubles the bill
-> for every turn the product serves, to compare answers nobody reads.
+> What it did **not** cost was the learner's quota: `shadow()` wrote no
+> `ai_usage_log` row, so `AI_DAILY_LIMIT_FREE` was untouched and the per-user
+> limit did not halve.
+>
+> So: shadow **one** account, never globally. A comparison doubles the bill for
+> every turn the product serves, to produce answers nobody reads.
 
 ---
 
@@ -778,7 +853,7 @@ they differ, **the tree wins** unless deliberately renamed:
 
 | Plan | Actual |
 |---|---|
-| `backend/tests/` | `backend/test/` (27 files) |
+| `backend/tests/` | `backend/test/` (25 suites) |
 | `frontend/tests/` | colocated in `frontend/src/` — `vite.config.js` scopes `test.include` to `src/**/*.test.{js,jsx}`, and three tests import backend source via `../../../../backend/src/...`. Moving them breaks both. |
 | `wrangler.example.toml` | `wrangler.toml.example` |
 | `backend/src/routes/` | `backend/src/http/routes/` |
@@ -835,7 +910,8 @@ setting, verifying and rotating every secret across all three stores.
   keeping that, or Cloudflare → Google external load balancer → Cloud Run with
   `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER` and the default `run.app` URL
   disabled. The second is the stronger answer; decide before step 8, not during.
-- **Turn latency against the model provider, and whether it gates step 8.**
+- **Turn latency against the model provider. Still the largest open question,
+  and it no longer has a fallback behind it.**
   Measured 2026-08-09 on a *warm* prod container: one lookup turn took **29.8s**
   and hit the 20s deadline, returning `stopped_by: "step_limit"` and an empty
   message — where dev's comparable turns run 3–6s. Through the Worker that turn
@@ -849,12 +925,33 @@ setting, verifying and rotating every secret across all three stores.
   slow dictionary hop and a slow model are both plausible and they are
   distinguishable: compare a turn that uses no tool against one that does.
 
-  Also unexplained: the deadline fired at 20s but the request ran 29.8s. The
-  deadline exists so the container does not work past the Worker's patience, and
-  a 50% overshoot means it is not doing that as tightly as `run.py` describes.
+  Also unexplained at the time: the deadline fired at 20s but the request ran
+  29.8s. The deadline exists so the container does not work past the Worker's
+  patience, and a 50% overshoot meant it was not doing that as tightly as
+  `run.py` described.
 
-  **This gates step 8, not the structure.** At step 7 the blast radius is one
-  allowlisted account and the JavaScript loop still answers everyone else.
+  **One mechanism for that has since been found and closed**, though it does not
+  account for this particular measurement. `asyncio.timeout` wrapped only the
+  graph call; the `answered_after_cap` rescue was awaited afterwards with no
+  clock of its own, so a turn could spend the full deadline in the loop and then
+  begin a fresh model call. `run.py` now runs the whole turn against one
+  `_Clock` and the rescue gets what is left of it. The reported incident had
+  `usage.model_calls` of 1 and no rescue, so the remaining overshoot is still
+  unexplained and this entry stays open.
+
+  This was written as gating step 8, on the reasoning that at step 7 the blast
+  radius was one allowlisted account. Steps 8 and 9 both happened anyway, so the
+  gate did not hold and the cost is now real: whichever learner draws the slow
+  turn loses the tutor's reply, silently, with no second implementation to catch
+  it. **The floor still holds** — the word cards are rendered before the tutor is
+  called and need no model — so the failure is a missing paragraph, not a broken
+  page. That is what makes this a live defect rather than an outage.
+
+  `observability/`'s p95 alert is the standing watch, and §13's own note there is
+  honest about its limit: at this traffic one slow turn in fifty will not move
+  p95. Counting the individual occurrences still means reading
+  `[zh] tutor unavailable` in `wrangler tail`.
+
   Raising `AGENT_SERVICE_TIMEOUT_MS` is not the lever — §2's 30s Workers ceiling
   leaves no room.
 
@@ -865,15 +962,21 @@ setting, verifying and rotating every secret across all three stores.
   version 401 until they recycle. Pinning (`secret_versions`) fixes the
   non-determinism by making rotation a deliberate new revision, but not the
   window itself. Closing that needs the agent to **accept both the current and
-  previous secret** during a rotation. Not needed while the JS tutor answers
-  every failure by taking over; revisit before step 8.
+  previous secret** during a rotation.
+
+  This was deferred on the grounds that the JS tutor answered every failure by
+  taking over. It does not any more (step 9), so a rotation window is now a
+  window in which learners get cards and no prose. Still not urgent — the
+  learner keeps a correct answer, and rotation is a deliberate act nobody
+  performs by accident — but the reason it was cheap has gone, and it should be
+  fixed before the next rotation rather than during one.
 - **`docs/operations.md`** — worth writing once there is something to operate.
   `docs/secrets.md` is written.
 
 ### Explicitly rejected, do not relitigate without new information
 
-- **Leaving D1 or KV.** 61 `.prepare()` call sites across 7 files, 18 of 27
-  backend test files bound to `cloudflare:test`, and a paid database replacing a
+- **Leaving D1 or KV.** 61 `.prepare()` call sites across 7 files, 17 of 25
+  backend test suites bound to `cloudflare:test`, and a paid database replacing a
   free one — for no capability the app needs.
 - **Moving the non-agentic AI path.** Three endpoints, no tools, short structured
   requests that already work well in the Worker and gain nothing from a network

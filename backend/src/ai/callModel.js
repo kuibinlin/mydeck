@@ -10,9 +10,18 @@
 //     raw:        unknown       untouched provider payload
 //   }
 //
-// This is the single turn an agent loop steps over: call, inspect toolCalls,
-// run them, append results, call again. Structured one-shot generation is
-// built on top of it in generateStructured.js.
+// `generateStructured.js` is the only caller, and it never passes `tools` — so
+// the tool half of that shape is currently unreachable. It is kept rather than
+// stripped, for one reason: `normalize()` in providers/cloudflare.js must handle
+// a tool-carrying reply anyway. Such a reply has `content: null`, and the null
+// check that drops it lands the entire API envelope in `text`, where it renders
+// to a user. That was a measured bug; test/normalize.test.js pins the fix.
+//
+// The agent loop that did step over this turn — call, inspect toolCalls, run
+// them, append results, call again — left in architecture.md §11 step 9. The
+// tutor is services/agent-service now, and it brings its own provider access.
+// If nothing here needs tools by the time something else does, delete the
+// parameter rather than growing a second loop around it.
 
 import { badRequest } from "../services/errors.js";
 import * as cloudflare from "./providers/cloudflare.js";

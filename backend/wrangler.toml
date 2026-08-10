@@ -87,17 +87,15 @@ MAX_QUESTIONS_PER_DECK = "50"   # max questions per challenge deck
 ###                   Gemma has no reasoning phase — 74 completion tokens and
 ###                   2.7s for three cards, against 1401 tokens and 34s for Qwen
 ###                   doing the same thing, almost all of it thinking out loud.
-###   AI_TUTOR_MODEL  the 中文 agent loop. Needs to hold a tool call, which Gemma
-###                   will not do: it accepts the tools and then answers from its
-###                   own memory, so the reply looks right while every character
-###                   in it bypassed the dictionary.
-###                   NOT v4.5 — that one reasons, and a loop of up to four steps
-###                   with a reasoning model measured 192s and 201s per turn. v4
-###                   calls the tool in 1.8s with no reasoning phase.
+###
+### There is no AI_TUTOR_MODEL here. The tutor's model is the agent service's
+### own AI_TUTOR_MODEL, set on Cloud Run — since §11 step 9 nothing in this
+### Worker reads a tutor model, because nothing in this Worker runs the tutor.
+### It stayed in this file for a while after that, which made a var the Worker
+### could not act on look like the setting that chose the model.
 AI_DEFAULT_PROVIDER = "openai"
 AI_BASE_URL = "https://api.sea-lion.ai"
 AI_MODEL = "aisingapore/Gemma-SEA-LION-v4-27B-IT"
-AI_TUTOR_MODEL = "aisingapore/Qwen-SEA-LION-v4-32B-IT"
 
 ### Cloudflare Workers AI, via the env.AI binding — no API key needed.
 ###
@@ -108,7 +106,6 @@ AI_TUTOR_MODEL = "aisingapore/Qwen-SEA-LION-v4-32B-IT"
 ### SEA-LION key is unavailable; providers/cloudflare.js reports 4006 honestly.
 # AI_DEFAULT_PROVIDER = "cloudflare"
 # AI_MODEL = "@cf/aisingapore/gemma-sea-lion-v4-27b-it"
-# AI_TUTOR_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 
 
 ### Tested Cloudflare Model
@@ -121,73 +118,47 @@ AI_TUTOR_MODEL = "aisingapore/Qwen-SEA-LION-v4-32B-IT"
 
 ### The Python agent service — services/agent-service.
 ###
-### CURRENT STATE: §11 step 8. Python is AUTHORITATIVE for EVERY learner — its
-### reply is the reply, and the Worker materialises the actions it asks for, so
-### saves create real decks.
+### CURRENT STATE: §11 step 9, the last one. This is the ONLY tutor. The Worker
+### has no agent loop left — `ai/agentLoop.js` and `tools/` are deleted — so
+### there is nothing to fall back to and nothing to choose between. AGENT_ENABLED,
+### AGENT_SHADOW and AGENT_ALLOWED_USERS existed for that choice and are gone
+### with it.
 ###
-### The JavaScript loop is still here and still catches transport errors, bad
-### statuses, malformed responses and policy failures. It does NOT catch a
-### timeout: that is rethrown, and routes/zh.js degrades to the cards. So a turn
-### slower than AGENT_SERVICE_TIMEOUT_MS costs the learner the prose whether or
-### not the fallback exists — keeping it is step 9's question, not this one.
+### What that costs, stated plainly: every failure of this hop now costs the
+### learner the tutor's prose. Before, a transport error or a malformed response
+### fell through to the in-process loop and nobody noticed; only a timeout
+### degraded. Now they all degrade.
 ###
-### Rollback is one line: AGENT_ALLOWED_USERS back to "". Or AGENT_ENABLED to
-### "false", which switches everyone off at once. Either is a revert and a
-### deploy; nothing persists that needs unwinding.
+### What it does not cost is the answer. routes/zh.js renders the word cards
+### from the deterministic dictionary before the tutor is called at all, and
+### that path needs no model, no network and no budget.
+###
+### An UNSET url is a supported state, not a broken one: the tutor is skipped
+### and the cards still answer. That is what makes `wrangler dev` useful without
+### a container running.
 ###
 ### Local development: point AGENT_SERVICE_URL at :8080 instead.
 ###   docker run --rm -p 8080:8080 --env-file services/agent-service/.env.local mydeck-agent:local
 ###
+### Rollback is no longer a flag. It is `git revert` of the deletion commit —
+### which is the honest cost of having one implementation, and was step 9's
+### question. Nothing persists that needs unwinding either way.
+###
 ### AGENT_SERVICE_TIMEOUT_MS is PAIRED with AGENT_DEADLINE_S in the agent (20s).
 ### The agent must stop first; otherwise it works on past the point where this
 ### Worker has given up, spending model budget nobody will read.
+###
 ### PROD, paired with the AGENT_SERVICE_SECRET already set from
 ### mydeck-agent-prod-service-secret. These two must move together: either one
-### alone is a 401, and a 401 falls back to the JavaScript loop silently — so it
-### looks like nothing happened rather than like a mistake.
+### alone is a 401, and a 401 degrades to the cards — so it looks like the tutor
+### had nothing to say rather than like a mistake. `[zh] tutor unavailable` in
+### `wrangler tail` is where it is visible.
 ###
 ### mydeck-agent-dev is still running and is the target for local `wrangler dev`
 ### and for images you do not trust yet. It expects the DEV secret, so pointing
 ### this back at it means putting the dev secret back too.
 AGENT_SERVICE_URL = "https://mydeck-agent-prod-42rh5oo32a-as.a.run.app"
 AGENT_SERVICE_TIMEOUT_MS = "25000"
-
-### Empty means nobody, deliberately. The failure mode of "empty means
-### everybody" is the whole user base moved onto an unproven path by a config
-### line that looks inert.
-###
-### EVERYONE is "*" — a separate value, not a reinterpretation of empty, so that
-### a deleted line or an unset variable in a fresh environment cannot move every
-### learner at once. Someone has to type it. That is §11 step 8, and the flip is
-### its own one-line commit.
-AGENT_ALLOWED_USERS = "*"
-
-### PRECEDENCE: AGENT_ENABLED beats AGENT_SHADOW. With both true the mode is
-### "remote" and shadow never runs — comparing the remote path against the thing
-### it already replaced is the one combination with no value (services/tutor.js
-### agentMode). So step 6 required ENABLED false; this is step 7 flipping it.
-###
-### What changes the moment this is true, for allowed accounts only:
-###   - runRemote's answer IS the answer; runLocal is no longer reached
-###   - intended_actions are MATERIALISED — a save writes a real deck
-###   - ai_usage_log is written from the model_calls Python reports
-###   - a timeout is rethrown and routes/zh.js degrades to the cards, so a cold
-###     start over 25s costs the prose entirely. Warm it first:
-###       curl -fsS $AGENT_SERVICE_URL/health
-AGENT_ENABLED = "true"
-
-### Inert while AGENT_ENABLED is true — set to false so the file says what it
-### means rather than relying on the precedence rule to hide it.
-###
-### If you roll back to step 6: shadow runs BOTH implementations and discards
-### the Python result, so a shadowed turn costs two turns for one answer. With
-### AI_DEFAULT_PROVIDER "openai" above, both halves bill AI_API_KEY — the
-### Workers AI neuron allowance is not in play unless that provider is
-### "cloudflare". It does NOT spend the learner's quota: shadow writes no
-### ai_usage_log row, so AI_DAILY_LIMIT_FREE is untouched.
-###
-### Your own account only, never a global flag.
-AGENT_SHADOW = "false"
 
 
 ### Custom domain — routes mydeckapi.linsnotes.com to this worker.

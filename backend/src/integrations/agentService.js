@@ -50,16 +50,30 @@ const MAX_STEPS = 6;
 const MAX_DISCOVERED_WORDS = 24;
 const MAX_MESSAGE_CHARS = 4000;
 
-/** Whether the remote tutor can be called at all. The flag decides whether it should be. */
+// The one usage number that has to be bounded, because it is the only one
+// anything LOOPS on: tutor.js writes one ai_usage_log row per model call, so an
+// unbounded value here is an unbounded run of awaited D1 writes inside a request
+// Workers will kill at 30s (§2). Every other field on this payload was already
+// capped; this one was not, which made the one field the Worker acts on the one
+// field it did not bound.
+//
+// Nothing legitimate comes near it: the agent's step limit puts a turn at about
+// max_steps + 1 calls, plus one for the rescue. A larger number is a broken
+// container, not an expensive turn.
+const MAX_MODEL_CALLS = 12;
+
+/** Whether the remote tutor can be called at all — and since §11 step 9, the whole question. */
 export const isConfigured = (env) => Boolean(env.AGENT_SERVICE_URL);
 
 // Every failure carries why.
 //
-// services/tutor.js reads `.reason` to decide what a failure costs: a timeout
-// has already spent the request's time budget, so retrying locally makes the
-// learner wait twice, while a fast transport error costs nothing to retry. One
-// generic error cannot express that difference, and the route's `unavailable`
-// reporting hides it from the logs as well.
+// Nothing branches on `.reason` any more. It was read to decide whether a
+// failure was worth retrying against the Worker's own loop, and step 9 deleted
+// the loop — every failure now lands the same way, as the cards without the
+// prose. The tag survives because it is the only thing that tells a slow model
+// from a broken contract in `wrangler tail`, where the route logs one line and
+// the difference between `timeout` and `contract` is the difference between
+// waiting and shipping a fix.
 function fail(reason, message) {
   const err = badGateway(message);
   err.reason = reason;
@@ -84,9 +98,11 @@ export async function runTurn(env, { messages, knownWords = [], decks = [], allo
   if (!base) throw badGateway("The agent service is not configured");
 
   // Generated here, next to the code that checks it comes back. A response that
-  // cannot prove which request it answers is discarded — under shadow mode two
-  // turns are genuinely in flight at once, and "the wrong one" is a failure
-  // mode that looks like a working system.
+  // cannot prove which request it answers is discarded. Shadow mode was the
+  // original reason — it put two turns in flight at once — and it is deleted,
+  // but the check is not about concurrency in this process. It is the one thing
+  // that catches a proxy, a retry or a warm container answering with somebody
+  // else's turn, which is a failure mode that looks like a working system.
   const requestId = crypto.randomUUID();
 
   const body = JSON.stringify({
@@ -174,7 +190,7 @@ function validate(payload, requestId) {
     stoppedBy: STOP_REASONS.has(payload.stopped_by) ? payload.stopped_by : "answered",
     steps: steps(payload.steps),
     usage: {
-      modelCalls: count(payload.usage?.model_calls),
+      modelCalls: modelCalls(payload.usage?.model_calls),
       inputTokens: count(payload.usage?.input_tokens),
       outputTokens: count(payload.usage?.output_tokens),
     },
@@ -262,6 +278,21 @@ function text(value, max) {
 function count(value) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+function modelCalls(value) {
+  const n = count(value);
+  if (n <= MAX_MODEL_CALLS) return n;
+
+  // Clamped, where a bad action type throws. The difference is what the field
+  // is: an unknown action asks the Worker to do something it does not
+  // understand, and refusing is the only safe answer. This is a billing number
+  // on an otherwise well-formed payload that still contains the learner's
+  // reply — throwing would spend the reply to protect the quota, which is the
+  // wrong way round. Logged, because a clamp nobody can see is a silent
+  // under-bill.
+  console.warn(`[agent] model_calls ${n} exceeds ${MAX_MODEL_CALLS} — clamped`);
+  return MAX_MODEL_CALLS;
 }
 
 function optionalId(value) {

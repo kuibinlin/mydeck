@@ -33,16 +33,15 @@ MAX_CARDS_PER_DECK = "50"
 MAX_QUESTIONS_PER_DECK = "50"
 AI_DEFAULT_PROVIDER = "cloudflare"
 
-# The Python agent service. Off, which is also the shipping default — every
-# existing test runs the JavaScript tutor unchanged, and the composition tests
-# turn these on per call with a synthetic env.
+# The Python agent service — the only tutor since §11 step 9, so this URL is
+# what every /api/zh/turn test now runs through. The flags that used to sit here
+# (AGENT_ENABLED, AGENT_SHADOW, AGENT_ALLOWED_USERS) chose between two
+# implementations and went with the second one.
 #
 # The host is `agent.test.invalid` because that is what vitest.config.mjs
-# answers; anything else falls to the default-deny 503 that safety.test.js pins.
-# `.invalid` is the reserved TLD for exactly this (RFC 2606).
-AGENT_ENABLED = "false"
-AGENT_SHADOW = "false"
-AGENT_ALLOWED_USERS = ""
+# answers, by scenario, from the last word of the message. Anything else falls
+# to the default-deny 503 that safety.test.js pins, and `.invalid` is the
+# reserved TLD for exactly this (RFC 2606) — a typo cannot resolve.
 AGENT_SERVICE_URL = "https://agent.test.invalid"
 AGENT_SERVICE_TIMEOUT_MS = "10000"
 

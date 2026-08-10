@@ -14,11 +14,16 @@ AGENT_SERVICE_TIMEOUT_MS and degrades to the cards; without a clock here, this
 process carries on past that — finishing model calls nobody will read, spending
 provider budget on an abandoned request, and holding a Cloud Run instance.
 
-It reports `step_limit` rather than an error, deliberately. An error would tell
-the Worker this failed fast, and the Worker answers a fast failure by running
-its own loop — making the learner wait a second time for a turn that was already
-too slow. `step_limit` is a completed turn that ran out of room, which is what
-this is.
+It reports `step_limit` rather than an error, deliberately. `step_limit` is a
+completed turn that ran out of room, and it carries whatever prose the model had
+already addressed to the learner — read off the meter, because a run that raises
+returns no messages at all. An error would say the turn produced nothing, which
+since §11 step 9 costs the learner the reply outright: there is no second
+implementation behind this one.
+
+The clock covers the WHOLE turn, rescue included. It used to wrap only the graph
+call, so a run that spent 19s in the loop could start a fresh model call and
+still be talking long after the Worker gave up — the overshoot §13 is chasing.
 
 ANSWERED_AFTER_CAP is the other. A run that spends every step calling tools has
 no prose to show for it — measured in the Worker: asking about 翻译 produced
@@ -26,12 +31,20 @@ four tool calls and an empty reply, rendering as a card with an unexplained
 silence beside it. So when the loop ends without an answer, ask for one with the
 tools taken away. Never after the deadline, though: that call would land after
 the Worker has already stopped listening.
+
+That rescue call carries the system prompt EXPLICITLY. `create_agent` owns the
+prompt during the loop and never puts it in the message list, so a bare
+`chat.ainvoke` here produced the one reply in the turn the tutor's rules never
+reached — free to state an HSK level it never looked up, offer to publish, or
+retype characters this model corrupts (§7.2). It is also the path where the
+model has spent every step on tools, which is when those rules matter most.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -65,6 +78,23 @@ class _Run:
     timed_out: bool
 
 
+class _Clock:
+    """One deadline for the turn, shared by every model call in it.
+
+    AGENT_DEADLINE_S is not a per-call timeout. It exists so this container
+    stops before AGENT_SERVICE_TIMEOUT_MS does, and that is a property of the
+    whole request — measuring it twice from zero gives the turn two budgets and
+    the Worker one.
+    """
+
+    def __init__(self, seconds: float) -> None:
+        self.total = seconds
+        self._started = time.monotonic()
+
+    def remaining(self) -> float:
+        return self.total - (time.monotonic() - self._started)
+
+
 async def run_turn(
     request: TurnRequest,
     *,
@@ -75,6 +105,7 @@ async def run_turn(
     state = TurnState.from_request(request, config)
     meter = RunMeter()
     messages = _to_langchain(request)
+    clock = _Clock(config.deadline_s)
 
     try:
         chat = model or build_model(config)
@@ -86,11 +117,11 @@ async def run_turn(
         log.error("provider unavailable (%s): %s", type(err).__name__, err)
         return _respond(request, state, meter, text="", stopped_by="model_error")
 
-    outcome = await _invoke(chat, state, request, messages, config, meter)
+    outcome = await _invoke(chat, state, request, messages, config, meter, clock)
 
     text, stopped_by = outcome.text, outcome.stopped_by
     if not text and state.steps and not outcome.timed_out:
-        if rescued := await _answer_without_tools(chat, messages, meter):
+        if rescued := await _answer_without_tools(chat, request, messages, meter, clock):
             text, stopped_by = rescued, "answered_after_cap"
 
     return _respond(request, state, meter, text=text, stopped_by=stopped_by)
@@ -110,7 +141,7 @@ def _respond(
         message=text,
         intended_actions=list(state.actions),
         discovered_words=state.discovered,
-        save_attempts=state.save_attempts + _refused_saves(state, meter),
+        save_attempts=state.save_attempts + _uncounted_saves(state, meter),
         stopped_by=stopped_by,
         steps=state.steps,
         usage=meter.usage(),
@@ -124,6 +155,7 @@ async def _invoke(
     messages: list[BaseMessage],
     config: Settings,
     meter: RunMeter,
+    clock: _Clock,
 ) -> _Run:
     from langchain.agents import create_agent
 
@@ -143,17 +175,21 @@ async def _invoke(
         "callbacks": [meter, *tracing.callbacks()],
     }
 
+    # Both capped paths carry `meter.last_answer` rather than "". The graph
+    # raises, so `result` never exists and any prose the model already wrote is
+    # only on the meter. Empty when it never addressed the learner, which is
+    # the honest answer then — the Worker's cards stand on their own.
     try:
-        async with asyncio.timeout(config.deadline_s):
+        async with asyncio.timeout(clock.remaining()):
             result: Any = await agent.ainvoke(agent_input, run_config)
     except TimeoutError:
         log.warning("agent stopped at the %ss deadline", config.deadline_s)
-        return _Run(text="", stopped_by="step_limit", timed_out=True)
+        return _Run(text=meter.last_answer, stopped_by="step_limit", timed_out=True)
     except GraphRecursionError as err:
         # Not a failure: the model kept working past the point where it should
         # have answered.
         log.warning("agent hit the step limit: %s", err)
-        return _Run(text="", stopped_by="step_limit", timed_out=False)
+        return _Run(text=meter.last_answer, stopped_by="step_limit", timed_out=False)
     except Exception as err:  # noqa: BLE001 — every provider fault, named in the log
         log.error("agent run failed (%s): %s", type(err).__name__, err)
         return _Run(text="", stopped_by="model_error", timed_out=False)
@@ -166,14 +202,42 @@ async def _invoke(
 
 
 async def _answer_without_tools(
-    chat: BaseChatModel, messages: list[BaseMessage], meter: RunMeter
+    chat: BaseChatModel,
+    request: TurnRequest,
+    messages: list[BaseMessage],
+    meter: RunMeter,
+    clock: _Clock,
 ) -> str:
-    """The tools are withheld, so the only thing left to do is write."""
+    """The tools are withheld, so the only thing left to do is write.
+
+    The system prompt is passed here because `create_agent` keeps it out of the
+    message list — it takes it as `system_prompt` and threads it in itself. So
+    this call is not "the loop minus tools", it is a fresh conversation, and
+    without the prompt it was the one reply in the turn written by a model that
+    had never been told the rules. Every safety line in prompt.py applies least
+    where it was applied last: the model is out of steps, has tool results it
+    half-remembers, and is being asked to commit to an answer.
+    """
+    remaining = clock.remaining()
+    if remaining <= 0:
+        # The loop used the whole budget. Answering now writes into a request
+        # the Worker has stopped waiting for.
+        log.warning("no deadline left for a final answer")
+        return ""
+
     try:
-        reply = await chat.ainvoke(
-            [*messages, SystemMessage(content=FINAL_NUDGE)],
-            config={"callbacks": [meter, *tracing.callbacks()]},
-        )
+        async with asyncio.timeout(remaining):
+            reply = await chat.ainvoke(
+                [
+                    SystemMessage(content=prompt_module.build(request)),
+                    *messages,
+                    SystemMessage(content=FINAL_NUDGE),
+                ],
+                config={"callbacks": [meter, *tracing.callbacks()]},
+            )
+    except TimeoutError:
+        log.warning("final answer call hit the %ss deadline", clock.total)
+        return ""
     except Exception as err:  # noqa: BLE001
         # Leave it empty. The Worker's cards are a complete answer on their own.
         log.warning("final answer call failed: %s", err)
@@ -209,21 +273,24 @@ def _text_of(message: object) -> str:
     return content.strip() if isinstance(content, str) else ""
 
 
-def _refused_saves(state: TurnState, meter: RunMeter) -> int:
-    """Saves the model asked for that never reached a tool at all.
+def _uncounted_saves(state: TurnState, meter: RunMeter) -> int:
+    """Saves the model asked for that the tool's own counter never saw.
 
-    Withheld tools are not registered with the agent, so a call to one is
-    answered by the framework — "tool not found" — and never touches the counter
-    inside the tool. That is the Worker's measured bug in a new costume:
-    `saveFailed` is gated on the attempt count, so an attempt nobody counted
-    means the learner sees the model's claim and nothing contradicting it.
+    Added to `state.save_attempts`, the pair comes to `max(asked, counted)`.
+
+    Two ways a call misses the counter inside the tool, and only the first used
+    to be covered. A WITHHELD tool is not registered, so the framework answers
+    "tool not found" and the body never runs. A REGISTERED one whose arguments
+    fail validation is rejected by the framework for a different reason, with
+    the same result — and gating on `state.allowed` returned 0 in exactly that
+    case, which is the Worker's measured bug wearing the other costume:
+    `saveFailed` is gated on this count, so an attempt nobody counted means the
+    learner reads a claimed save with nothing contradicting it.
 
     Read off the meter, which watches the model's output directly — so this
     survives a run that ended at the deadline or the step limit and returned no
     messages at all. `TurnState.check` covers the case where a tool IS
-    registered and the allowlist still says no; this covers the case where it
-    never got that far.
+    registered, runs, and the allowlist still says no.
     """
-    if "save_words_to_deck" in state.allowed:
-        return 0
-    return meter.asked_for("save_words_to_deck")
+    asked = meter.asked_for("save_words_to_deck")
+    return max(0, asked - state.save_attempts)

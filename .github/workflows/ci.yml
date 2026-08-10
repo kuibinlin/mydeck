@@ -65,7 +65,7 @@ jobs:
 
       - run: npm run test:web
 
-      # The slow one: boots workerd with local D1 and KV. ~29 files, 416 tests.
+      # The slow one: boots workerd with local D1 and KV. ~25 files, 350+ tests.
       - run: npm run test:api
 
       - run: npm run build
@@ -106,10 +106,14 @@ jobs:
 
       - run: uv run --directory services/agent-service pyright app
 
-      # Includes test_prompt_parity.py, which reads backend/src/services/tutor.js
-      # as text and fails if the two system prompts have diverged. It depends on
-      # the monorepo layout, so it needs the full checkout above — not a sparse
-      # one limited to services/.
+      # Includes test_tool_parity.py, which reads backend/src/services/tutor.js
+      # as text and fails if the tool allowlist has diverged from schemas.py in
+      # either direction. It depends on the monorepo layout, so it needs the
+      # full checkout above — not a sparse one limited to services/.
+      #
+      # (It replaced test_prompt_parity.py, which did the same for the two
+      # system prompts. §11 step 9 deleted the Worker's copy, so the prompt has
+      # one home now and nothing to compare. The allowlist still has two.)
       - run: uv run --directory services/agent-service pytest -q
 
   # ───────────────────────────────────────────────────────────────────────────

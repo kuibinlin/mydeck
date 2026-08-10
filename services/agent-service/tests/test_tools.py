@@ -78,7 +78,8 @@ def test_every_argument_is_described(tools):
     ],
 )
 def test_word_ref_repair(sent, expected):
-    """Ported from the Worker's measured cases — backend/test/repair.test.js.
+    """Ported from the Worker's measured cases, which lived in
+    backend/test/repair.test.js until §11 step 9 deleted its repair layer.
 
     Repaired where the meaning is unambiguous, dropped where it is not. A
     rejection would cost a whole turn to retry, which is the expensive way to

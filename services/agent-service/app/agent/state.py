@@ -24,6 +24,8 @@ from typing import Any
 
 from ..config import Settings
 from ..schemas import (
+    MAX_ACTIONS,
+    MAX_DISCOVERED_WORDS,
     CreateActivityAction,
     DeckContext,
     KnownWord,
@@ -41,6 +43,15 @@ NO_BUDGET = "No more tool calls are available this turn. Answer the learner now.
 REPEATED = (
     "You already called this with the same arguments. The result is above — answer the learner now."
 )
+NO_ACTION_ROOM = (
+    "You have already asked for as many saves and activities as one turn can carry. "
+    "Answer the learner now."
+)
+
+# The tools whose success adds an entry to `actions`, and therefore the ones the
+# response's MAX_ACTIONS cap applies to. A lookup is unbounded by this — it
+# produces a step, not an action.
+ACTION_TOOLS = frozenset({"save_words_to_deck", "create_activity"})
 
 IntendedAction = SaveWordsAction | CreateActivityAction
 
@@ -89,16 +100,25 @@ class TurnState:
         trained-in, hallucinated, or steered there by pasted text — must not
         reach a tool just because the tool exists in this process.
 
-        Then the budget, then repeats. Answering a repeat from here costs
-        nothing and breaks a cycle: a weak model's most common failure is asking
-        for the same thing twice. It doubles as the only rate-limit relief this
-        service has, since the dictionary's public endpoint allows 30 requests a
-        minute across every caller.
+        Then the budget, then the action cap, then repeats. Answering a repeat
+        from here costs nothing and breaks a cycle: a weak model's most common
+        failure is asking for the same thing twice. It doubles as the only
+        rate-limit relief this service has, since the dictionary's public
+        endpoint allows 30 requests a minute across every caller.
+
+        THE ACTION CAP is not the tool budget. `max_tool_calls` is 6 and
+        MAX_ACTIONS is 4, so six successful saves and activities were reachable
+        — and `TurnResponse.intended_actions` refuses more than four. That
+        turned a turn where the model did MORE work into a ValidationError, a
+        500, and a learner with no reply at all. Refused here instead, where a
+        refusal is a sentence the model can read and answer around.
         """
         if name not in self.allowed:
             return UNKNOWN_TOOL.format(name=name)
         if self.tool_calls >= self.config.max_tool_calls:
             return NO_BUDGET
+        if name in ACTION_TOOLS and len(self.actions) >= MAX_ACTIONS:
+            return NO_ACTION_ROOM
         if self._key(name, args) in self._seen:
             return REPEATED
         return None
@@ -162,8 +182,15 @@ class TurnState:
         The characters came from the dictionary, not from the model, which is the
         only reason they are safe to send back at all — and the Worker still
         re-resolves every one before using it.
+
+        Stops at MAX_DISCOVERED_WORDS because that is what `TurnResponse` will
+        accept. A search returning more used to build a response the service
+        could not serialise, costing the learner the whole reply over words that
+        were only ever a bonus. Dropping the tail costs nothing anyone asked for.
         """
         have = {entry.simplified for entry in self.known}
         for word in words:
+            if len(self.discovered) >= MAX_DISCOVERED_WORDS:
+                return
             if word not in have and word not in self.discovered and HAN_WORD.match(word):
                 self.discovered.append(word)

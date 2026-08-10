@@ -6,7 +6,7 @@ tell apart. The rest answer real but narrow questions and stay out of the
 tutor's routing problem.
 
 Descriptions carry the routing, so no two share a trigger phrase. Ported from
-backend/src/tools/defs/hsk.js, where this wording measured 14/18 correct.
+the Worker's deleted tools/defs/hsk.js, where it measured 14/18 correct.
 """
 
 from __future__ import annotations

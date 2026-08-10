@@ -104,12 +104,20 @@ committed template. Add any new var to both.
 | `ADMIN_EMAILS` | `""` | Comma-separated admin emails. Admins can edit/delete any deck. |
 | `AI_DEFAULT_PROVIDER` | `cloudflare` | `cloudflare`, `groq`, `openai`, `anthropic` |
 | `AI_MODEL` | _(provider default)_ | Model for flashcard/quiz generation — wants clean JSON, fast. A reasoning model is the wrong choice here. |
-| `AI_TUTOR_MODEL` | _(provider default)_ | Model for the 中文 agent loop. **Must support tool calls.** Falls back to `AI_MODEL`. |
+| `AGENT_SERVICE_URL` | _(unset)_ | The Python tutor on Cloud Run. **Unset is supported**: no URL, no tutor, and `/api/zh/turn` answers with the word cards alone. |
+| `AGENT_SERVICE_TIMEOUT_MS` | `25000` | Must stay under the Workers 30s request ceiling, and above the agent's own `AGENT_DEADLINE_S` (20s). |
 | `AI_BASE_URL` | _(provider default)_ | Host override for OpenAI-compatible providers. Host only — the code appends `/v1/chat/completions`. |
 | `AI_MAX_RETRIES` | `3` | Retries when the model returns invalid output |
 | `AI_DAILY_LIMIT_FREE` | `60` | Max model calls per user per day (empty = unlimited). **Counted per model call, not per request** — one tutor turn can spend several. |
 | `MAX_CARDS_PER_DECK` | `50` | Max flashcards per deck |
 | `MAX_QUESTIONS_PER_DECK` | `50` | Max questions per challenge deck |
+
+**`AI_TUTOR_MODEL` is not in this table, and not in `wrangler.toml`.** It is the
+agent service's variable, set on Cloud Run — since §11 step 9 the Worker does
+not run the tutor and reads no tutor model. `AI_MODEL` above is flashcard and
+quiz generation only. The tutor's model must hold a tool call and must not be a
+reasoning model: four steps of visible thinking measured ~200s per turn against
+a 20s deadline.
 
 > **Cloudflare Workers AI is the default** — no API key needed, inference runs
 > inside Cloudflare via the `env.AI` binding.

@@ -1,42 +1,24 @@
-// The composition layer: which implementation answers, and what the Worker does
-// with what comes back.
+// The composition layer: what the Worker does with what the service sends back.
 //
 // This is the layer the whole extraction rests on. agentService.test.js proves
 // the Worker will not believe a malformed response; this file proves it will not
-// act on a well-formed one that asks for something the learner never authorised,
-// and that the JavaScript tutor stays in charge until it is deliberately not.
+// act on a well-formed one that asks for something the learner never authorised.
 //
-// Driven through `respond` rather than the route, because the flags live in
-// `env` and a route test cannot vary them — SELF.fetch uses the worker's own
-// bindings. The one thing only the route can prove, that `ctx` still reaches
-// it, is asserted at the bottom.
+// Driven through `respond` rather than the route, because `respond` is where
+// policy lives and it has two callers — a typed message and a finished
+// activity. Anything asserted at the route would leave the other one behind.
 //
 // The remote service is stubbed in vitest.config.mjs and selected by the LAST
 // WORD of the message, which is why the messages below read the way they do.
+// A scenario name must never contain a save verb: `\bsave` matches inside
+// `saveref`, which silently arms the write tool the refusal tests exist to
+// check. That is why they read `putref` rather than `saveref`.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { env, SELF } from "cloudflare:test";
 import { respond, TUTOR } from "../src/services/tutor.js";
 import { createDeck } from "../src/services/flashcards.js";
-import * as callModelModule from "../src/ai/callModel.js";
 import { createUser, createUserWithSession, BASE } from "./helpers.js";
-
-const turn = (text, toolCalls = []) => ({
-  text,
-  toolCalls,
-  stopReason: toolCalls.length ? "tool_calls" : "stop",
-  usage: null,
-  raw: {},
-});
-
-function scriptModel(turns) {
-  let i = 0;
-  return vi.spyOn(callModelModule, "callModel").mockImplementation(async () => {
-    const t = turns[Math.min(i, turns.length - 1)];
-    i++;
-    return t;
-  });
-}
 
 const card = (word, pinyin, meaning, level = 1) => ({
   word,
@@ -53,145 +35,68 @@ const usageRows = (user) =>
     .first()
     .then((r) => r.n);
 
+const decksOf = (user) =>
+  env.DB.prepare("SELECT id FROM flashcard_decks WHERE created_by = ? ORDER BY id")
+    .bind(String(user.id))
+    .all()
+    .then((r) => r.results.map((d) => d.id));
+
 const cardsIn = (deckId) =>
   env.DB.prepare("SELECT front, meaning FROM flashcards WHERE deck_id = ? AND is_deleted = 0")
     .bind(deckId)
     .all()
     .then((r) => r.results);
 
-let spy;
 let user;
 
 beforeEach(async () => {
-  vi.restoreAllMocks();
   user = await createUser();
 });
-afterEach(() => spy?.mockRestore());
 
-// Flags, per test. The defaults in wrangler.test.toml are all off.
-const remote = (u = user) => ({
-  ...env,
-  AGENT_ENABLED: "true",
-  AGENT_ALLOWED_USERS: u.email,
-});
-
-const shadowed = (u = user) => ({
-  ...env,
-  AGENT_SHADOW: "true",
-  AGENT_ALLOWED_USERS: u.email,
-});
-
-describe("which implementation answers", () => {
-  it("uses JavaScript when every flag is off", () => {
-    expect(TUTOR.agentMode(env, user)).toBe("local");
-  });
-
-  it("uses JavaScript for a user who is not on the allowlist", () => {
-    const e = { ...env, AGENT_ENABLED: "true", AGENT_ALLOWED_USERS: "someone@else.com" };
-    expect(TUTOR.agentMode(e, user)).toBe("local");
-  });
-
-  it("treats an empty allowlist as nobody, not everybody", () => {
-    const e = { ...env, AGENT_ENABLED: "true", AGENT_ALLOWED_USERS: "" };
-    expect(TUTOR.agentMode(e, user)).toBe("local");
-  });
-
-  it("matches the allowlist on email, case-insensitively, ignoring spacing", () => {
-    const e = {
-      ...env,
-      AGENT_ENABLED: "true",
-      AGENT_ALLOWED_USERS: ` other@x.com , ${user.email.toUpperCase()} `,
-    };
-    expect(TUTOR.agentMode(e, user)).toBe("remote");
-  });
-
-  it("treats \"*\" as everyone", () => {
-    // §11 step 8. A wildcard rather than a reinterpretation of empty, so that a
-    // deleted line or an unset variable cannot move the whole user base onto the
-    // remote path by accident.
-    const e = { ...env, AGENT_ENABLED: "true", AGENT_ALLOWED_USERS: "*" };
-    expect(TUTOR.agentMode(e, { email: "anyone@example.com" })).toBe("remote");
-  });
-
-  it("keeps meaning everyone when a leftover address sits beside the wildcard", () => {
-    // `*, someone@x.com` is not a narrowing. Reading it as one would be a
-    // surprise in the direction that matters.
-    const e = { ...env, AGENT_ENABLED: "true", AGENT_ALLOWED_USERS: `*, ${user.email}` };
-    expect(TUTOR.agentMode(e, { email: "stranger@example.com" })).toBe("remote");
-  });
-
-  it("still needs a flag: \"*\" alone is not enough", () => {
-    // The allowlist says WHO may be moved, never WHETHER anyone is. With both
-    // flags off this is still the JavaScript loop.
-    const e = { ...env, AGENT_ALLOWED_USERS: "*" };
-    expect(TUTOR.agentMode(e, user)).toBe("local");
-  });
-
-  it("shadows everyone when \"*\" is set and only AGENT_SHADOW is on", () => {
-    const e = { ...env, AGENT_SHADOW: "true", AGENT_ALLOWED_USERS: "*" };
-    expect(TUTOR.agentMode(e, { email: "anyone@example.com" })).toBe("shadow");
-  });
-
-  it("prefers the remote path over shadowing when both are on", () => {
-    // The one combination with no value: two turns of model budget spent to
-    // compare a result against the thing it already replaced.
-    const e = {
-      ...env,
-      AGENT_ENABLED: "true",
-      AGENT_SHADOW: "true",
-      AGENT_ALLOWED_USERS: user.email,
-    };
-    expect(TUTOR.agentMode(e, user)).toBe("remote");
-  });
-
-  it("stays local when the service has no URL, whatever the flags say", () => {
-    const e = { ...env, AGENT_SERVICE_URL: "", AGENT_ENABLED: "true", AGENT_ALLOWED_USERS: user.email };
-    expect(TUTOR.agentMode(e, user)).toBe("local");
-  });
-});
-
-describe("the local path is untouched", () => {
-  it("still runs the scripted model and never calls the service", async () => {
-    spy = scriptModel([turn("医院 is a hospital.")]);
-
-    const out = await respond(env, {
-      user,
-      message: "what is 医院",
-      seed: [card("医院", "yīyuàn", "hospital")],
-    });
-
-    expect(spy).toHaveBeenCalled();
-    expect(out.text).toBe("医院 is a hospital.");
-    // New field, and false here on purpose: a failed activity comes back to the
-    // model mid-run on this path, so it says so itself.
-    expect(out.activityFailed).toBe(false);
-  });
-});
+// There are no flags left to set. AGENT_ENABLED, AGENT_SHADOW and
+// AGENT_ALLOWED_USERS existed to choose between two implementations, and §11
+// step 9 left one — the only question now is whether the service is reachable,
+// which AGENT_SERVICE_URL answers. wrangler.test.toml points it at
+// agent.test.invalid, answered by scenario in vitest.config.mjs.
+const agent = () => ({ ...env });
 
 describe("the remote path", () => {
-  it("answers from the service without touching the model", async () => {
-    spy = scriptModel([turn("should never run")]);
-
-    const out = await respond(remote(), {
+  it("answers from the service", async () => {
+    // This used to also spy on ai/callModel and assert it was never called.
+    // That assertion could not fail after step 9: the tutor path no longer
+    // imports callModel at all, so the spy was watching a door that had been
+    // bricked up. safety.test.js is what keeps the suite off a real model.
+    const out = await respond(agent(), {
       user,
       message: "what is 医院 ok",
       seed: [card("医院", "yīyuàn", "hospital")],
     });
 
-    expect(spy).not.toHaveBeenCalled();
     expect(out.text).toContain("hospital");
     expect(out.stoppedBy).toBe("answered");
   });
 
   it("bills one usage row per model call the service reports", async () => {
-    // Quota counts model calls, not requests — the same accounting the local
-    // path uses, sourced one process away.
-    await respond(remote(), { user, message: "ok", seed: [] });
-    expect(await usageRows(user)).toBe(1);
+    // Quota counts model calls, not requests. Driven with a scenario reporting
+    // FOUR calls, because the default reports one — and against one row, "per
+    // call" and "per request" are the same number, so the assertion that used
+    // to live here could not fail.
+    await respond(agent(), { user, message: "ok billing", seed: [] });
+    expect(await usageRows(user)).toBe(4);
+  });
+
+  it("stops billing at the cap when the service reports an absurd count", async () => {
+    // model_calls is the only response field anything loops on, and each turn
+    // of that loop is an awaited D1 write inside a request Workers kills at
+    // 30s. Clamped rather than refused: the payload still holds the learner's
+    // reply, and spending the reply to protect the quota is the wrong way
+    // round.
+    await respond(agent(), { user, message: "ok overbilled", seed: [] });
+    expect(await usageRows(user)).toBe(12);
   });
 
   it("sends the seeded and carried words in order, with provenance", async () => {
-    const out = await respond(remote(), {
+    const out = await respond(agent(), {
       user,
       message: "echo",
       seed: [card("医院", "yīyuàn", "hospital")],
@@ -208,14 +113,30 @@ describe("the remote path", () => {
     expect(sent.level).toBe(null);
   });
 
+  it("drops a carried word the dictionary does not know", async () => {
+    // The client says WHICH words came up; the dictionary says what they are.
+    // A carried word that does not resolve is not carried — there is nothing
+    // useful to do with characters we cannot read, and passing them on would
+    // hand the model a word it could then retype badly.
+    const out = await respond(agent(), {
+      user,
+      message: "echo",
+      seed: [card("医院", "yīyuàn", "hospital")],
+      context: { turns: [{ q: "?", a: "?" }], words: ["书", "zzzz"] },
+    });
+
+    const sent = JSON.parse(out.text);
+    expect(sent.known_words.map((w) => w.simplified)).toEqual(["医院", "书"]);
+  });
+
   it("offers the save tool only when the learner asked to save", async () => {
     const plain = JSON.parse(
-      (await respond(remote(), { user, message: "echo", seed: [] })).text,
+      (await respond(agent(), { user, message: "echo", seed: [] })).text,
     );
     expect(plain.allowed_tools).not.toContain("save_words_to_deck");
 
     const asked = JSON.parse(
-      (await respond(remote(), { user, message: "save this echo", seed: [] })).text,
+      (await respond(agent(), { user, message: "save this echo", seed: [] })).text,
     );
     expect(asked.allowed_tools).toContain("save_words_to_deck");
   });
@@ -225,14 +146,14 @@ describe("the remote path", () => {
     await createDeck(env, { user, title: "Mine", category: "Language" });
     await createDeck(env, { user: other, title: "Theirs", category: "Language" });
 
-    const sent = JSON.parse((await respond(remote(), { user, message: "echo", seed: [] })).text);
+    const sent = JSON.parse((await respond(agent(), { user, message: "echo", seed: [] })).text);
     expect(sent.decks.map((d) => d.name)).toEqual(["Mine"]);
   });
 });
 
 describe("materialising a save", () => {
   it("writes real cards for a referenced word", async () => {
-    const out = await respond(remote(), {
+    const out = await respond(agent(), {
       user,
       message: "please save putref",
       seed: [card("医院", "yīyuàn", "hospital")],
@@ -246,7 +167,7 @@ describe("materialising a save", () => {
   });
 
   it("falls back to the words on screen when the action names none", async () => {
-    const out = await respond(remote(), {
+    const out = await respond(agent(), {
       user,
       message: "please save putpool",
       seed: [card("医院", "yīyuàn", "hospital"), card("书", "shū", "book")],
@@ -256,7 +177,7 @@ describe("materialising a save", () => {
   });
 
   it("saves into a deck the learner named", async () => {
-    const out = await respond(remote(), {
+    const out = await respond(agent(), {
       user,
       message: "please save putnamed",
       seed: [card("医院", "yīyuàn", "hospital")],
@@ -269,7 +190,7 @@ describe("materialising a save", () => {
     // 银行 never appeared in the request. It comes back as discovered_words and
     // is looked up locally — the service says which word, the dictionary says
     // what it means.
-    const out = await respond(remote(), {
+    const out = await respond(agent(), {
       user,
       message: "please save discovered",
       seed: [card("医院", "yīyuàn", "hospital")],
@@ -283,7 +204,7 @@ describe("materialising a save", () => {
   it("refuses a save the learner never asked for, and still counts it", async () => {
     // The measured rule: saveFailed is gated on the attempt count, and counting
     // after the refusal made the signal unreachable in exactly this case.
-    const out = await respond(remote(), {
+    const out = await respond(agent(), {
       user,
       message: "what is 医院 putref",
       seed: [card("医院", "yīyuàn", "hospital")],
@@ -295,7 +216,7 @@ describe("materialising a save", () => {
   });
 
   it("reports saveFailed when the service claims a save it never asked for", async () => {
-    const out = await respond(remote(), {
+    const out = await respond(agent(), {
       user,
       message: "please save claimed",
       seed: [card("医院", "yīyuàn", "hospital")],
@@ -308,7 +229,7 @@ describe("materialising a save", () => {
 
 describe("materialising an activity", () => {
   it("builds one from a referenced word", async () => {
-    const out = await respond(remote(), {
+    const out = await respond(agent(), {
       user,
       message: "practise writing stroke",
       seed: [card("书", "shū", "book")],
@@ -323,7 +244,7 @@ describe("materialising an activity", () => {
   it("sets activityFailed instead of losing the whole turn", async () => {
     // A matching game with one word throws in services/activities.js. Letting
     // that out would cost the learner the tutor's reply over a failed game.
-    const out = await respond(remote(), {
+    const out = await respond(agent(), {
       user,
       message: "quiz me matchfail",
       seed: [card("书", "shū", "book")],
@@ -336,156 +257,107 @@ describe("materialising an activity", () => {
 });
 
 describe("refusing a well-formed but unauthorised response", () => {
-  const fallback = async (message) => {
-    spy = scriptModel([turn("the local tutor answered instead")]);
-    return respond(remote(), { user, message, seed: [card("医院", "yīyuàn", "hospital")] });
-  };
+  // These four are the reason the Worker still exists between the learner and
+  // the agent. The service is on public ingress and its answer is a PROPOSAL —
+  // well-formed by the time integrations/agentService.js is done with it, and
+  // still not permitted.
+  //
+  // §11 step 9 changed what a refusal COSTS, not what is refused. There is no
+  // JavaScript loop to fall back to, so an unauthorised action degrades the
+  // whole turn to the cards. Refusing loudly is the point: the alternative is
+  // performing a write nobody asked for.
+  // Two layers refuse, with different messages, and both are correct here:
+  // integrations/agentService.js rejects an unknown action TYPE as a contract
+  // violation before tutor.js ever sees it, while tutor.js rejects a known type
+  // carrying an unauthorised argument. The test asserts the turn is refused, not
+  // which layer caught it.
+  const refused = (message, seed = [card("医院", "yīyuàn", "hospital")]) =>
+    expect(respond(agent(), { user, message, seed })).rejects.toThrow(
+      /invalid action|unknown agent action/i,
+    );
 
   it("rejects a word reference outside the list we sent", async () => {
-    const out = await fallback("please save outofrange");
-    expect(out.text).toBe("the local tutor answered instead");
-    expect(out.saves).toEqual([]);
+    await refused("please save outofrange");
+    expect(await cardsIn(1)).toEqual([]);
   });
 
   it("rejects a reference to a word we could not resolve", async () => {
-    spy = scriptModel([turn("the local tutor answered instead")]);
-    const out = await respond(remote(), {
-      user,
-      message: "please save unfound",
-      // index 1 is a miss, so it is sent with found:false and cannot be named.
-      seed: [card("医院", "yīyuàn", "hospital"), { word: "zzz", found: false }],
-    });
-    expect(out.text).toBe("the local tutor answered instead");
-    expect(out.saves).toEqual([]);
+    // index 1 is a miss, so it is sent with found:false and cannot be named.
+    await refused("please save unfound", [
+      card("医院", "yīyuàn", "hospital"),
+      { word: "zzz", found: false },
+    ]);
   });
 
   it("rejects a deck id that was never offered", async () => {
-    const out = await fallback("please save baddeck");
-    expect(out.text).toBe("the local tutor answered instead");
+    await refused("please save baddeck");
     expect(await cardsIn(9999)).toEqual([]);
   });
 
   it("rejects an unknown action type", async () => {
-    const out = await fallback("unknown_action");
-    expect(out.text).toBe("the local tutor answered instead");
+    await refused("unknown_action");
+  });
+
+  it("writes nothing when a later action in the same response is invalid", async () => {
+    // The refusal has to land before the first action writes. When these
+    // checks ran inside the execution loop, a valid save followed by an
+    // invalid one left a deck in the learner's account and then threw — and
+    // routes/zh.js catches that and answers with the cards, so nothing on
+    // screen ever mentioned the deck that had just been created.
+    const before = await decksOf(user);
+    await refused("please save goodthenbad");
+    expect(await decksOf(user)).toEqual(before);
   });
 });
 
 describe("failure policy", () => {
-  it("falls back to JavaScript on a malformed response", async () => {
-    spy = scriptModel([turn("local answer")]);
-    const out = await respond(remote(), { user, message: "not_json", seed: [] });
-    expect(out.text).toBe("local answer");
-  });
+  // §11 step 9 changed this. Before, only a timeout degraded to the cards —
+  // a malformed response or a service error fell through to the JavaScript loop
+  // and the learner never knew. There is no second loop now, so every failure
+  // costs the prose and routes/zh.js renders the word cards alone.
+  //
+  // That floor is still a complete answer: the cards come from the deterministic
+  // lookup, which never needed a model.
 
-  it("falls back to JavaScript on a service error", async () => {
-    spy = scriptModel([turn("local answer")]);
-    const out = await respond(remote(), { user, message: "server_error", seed: [] });
-    expect(out.text).toBe("local answer");
-  });
-
-  it("does NOT fall back on a timeout — the request's time is already spent", async () => {
-    // Rethrown so http/routes/zh.js degrades to the cards, which is a complete
-    // answer. Running a second loop would make the learner wait twice for a
-    // turn that was already too slow.
-    spy = scriptModel([turn("local answer")]);
-
+  it("degrades to the cards on a malformed response", async () => {
     await expect(
-      respond({ ...remote(), AGENT_SERVICE_TIMEOUT_MS: "50" }, {
+      respond(agent(), { user, message: "not_json", seed: [] }),
+    ).rejects.toThrow();
+  });
+
+  it("degrades to the cards on a service error", async () => {
+    await expect(
+      respond(agent(), { user, message: "server_error", seed: [] }),
+    ).rejects.toThrow();
+  });
+
+  it("degrades to the cards on a timeout", async () => {
+    await expect(
+      respond({ ...agent(), AGENT_SERVICE_TIMEOUT_MS: "50" }, {
         user,
         message: "slow",
         seed: [],
       }),
     ).rejects.toThrow(/did not answer/i);
-
-    expect(spy).not.toHaveBeenCalled();
-  });
-});
-
-describe("shadow mode", () => {
-  it("returns the JavaScript answer and schedules the remote call", async () => {
-    spy = scriptModel([turn("the local answer the learner sees")]);
-    const scheduled = [];
-
-    const out = await respond(shadowed(), {
-      user,
-      message: "ok",
-      seed: [card("医院", "yīyuàn", "hospital")],
-      waitUntil: (p) => scheduled.push(p),
-    });
-
-    expect(out.text).toBe("the local answer the learner sees");
-    expect(scheduled).toHaveLength(1);
-    await Promise.all(scheduled);
   });
 
-  it("never materialises the remote actions", async () => {
-    spy = scriptModel([turn("local")]);
-    const scheduled = [];
-
-    const out = await respond(shadowed(), {
-      user,
-      message: "please save putref",
-      seed: [card("医院", "yīyuàn", "hospital")],
-      waitUntil: (p) => scheduled.push(p),
-    });
-    await Promise.all(scheduled);
-
-    // The scenario asked for a save. Shadow mode observes; it does not write.
-    expect(out.saves).toEqual([]);
-    expect(await cardsIn(1)).toEqual([]);
-  });
-
-  it("never writes a usage row for the shadowed call", async () => {
-    // AI_DAILY_LIMIT_FREE counts model calls, so a shadow row would halve the
-    // learner's real allowance to pay for an experiment they cannot see.
-    spy = scriptModel([turn("local")]);
-    const scheduled = [];
-
-    await respond(shadowed(), {
-      user,
-      message: "ok",
-      seed: [],
-      waitUntil: (p) => scheduled.push(p),
-    });
-    await Promise.all(scheduled);
-
-    // One, from the local loop's single model call. The remote reports one too.
-    expect(await usageRows(user)).toBe(1);
-  });
-
-  it("survives a remote failure without touching the answer", async () => {
-    spy = scriptModel([turn("local answer")]);
-    const scheduled = [];
-
-    const out = await respond(shadowed(), {
-      user,
-      message: "not_json",
-      seed: [],
-      waitUntil: (p) => scheduled.push(p),
-    });
-    await expect(Promise.all(scheduled)).resolves.toBeDefined();
-
-    expect(out.text).toBe("local answer");
-  });
-
-  it("does nothing at all without a waitUntil", async () => {
-    // A tool or a test calling respond has no context to schedule against, and
-    // an observation must not run on the learner's request instead.
-    spy = scriptModel([turn("local answer")]);
-
-    const out = await respond(shadowed(), { user, message: "ok", seed: [] });
-    expect(out.text).toBe("local answer");
-    expect(await usageRows(user)).toBe(1);
+  it("refuses to answer at all when no service is configured", async () => {
+    // This replaced AGENT_ENABLED / AGENT_SHADOW / AGENT_ALLOWED_USERS. With one
+    // implementation there is nothing left to choose between — only whether it
+    // is reachable.
+    await expect(
+      respond({ ...agent(), AGENT_SERVICE_URL: "" }, { user, message: "ok", seed: [] }),
+    ).rejects.toThrow();
   });
 });
 
 describe("both entry points", () => {
   it("routes an activity result through the same selection", async () => {
     // http/routes/zh.js has two callers of respond — a typed message and a
-    // finished activity. The flag is read inside respond precisely so the
-    // second one cannot be left behind on the old path.
-    const out = await respond(remote(), {
+    // finished activity. Everything policy decides lives inside respond
+    // precisely so the second one cannot be left behind: the bounding, the
+    // allowlist, the seeding and the reachability check all reach both.
+    const out = await respond(agent(), {
       user,
       message: "The learner just finished a quick check: 3 of 4 correct ok",
       seed: [],
@@ -494,7 +366,11 @@ describe("both entry points", () => {
     expect(out.text).toContain("hospital");
   });
 
-  it("still serves the route with ctx threaded through", async () => {
+  // Named for what it proves now. It used to assert that `ctx` reached the
+  // route, which was shadow mode's only requirement and went with it in step 9.
+  // What is still worth pinning is that the activity path works end to end
+  // through HTTP, not only through respond().
+  it("serves a finished activity end to end through the route", async () => {
     const { token } = await createUserWithSession({
       email: "ctx@example.com",
       username: "ctx",
@@ -522,8 +398,10 @@ describe("a save that was claimed but never attempted", () => {
   // the model replied "I've saved 医院 to your private draft deck" having called
   // nothing. saveAttempts was 0, so nothing in the app contradicted it.
   //
-  // The JavaScript path has always done this too — the fix is in the shared
-  // saveFailed computation so both are covered.
+  // The JavaScript path had this bug too. That path is gone (§11 step 9), but
+  // the model has not changed and neither has its habit of narrating a write it
+  // never performed — so saveFailed is the only thing in the app that can
+  // contradict it.
 
   it("recognises a completed claim, not an offer", () => {
     const { claimsSave } = TUTOR;
@@ -555,7 +433,7 @@ describe("a save that was claimed but never attempted", () => {
   });
 
   it("contradicts a remote reply that claims a save it never made", async () => {
-    const out = await respond(remote(), {
+    const out = await respond(agent(), {
       user,
       message: "boast",
       seed: [card("医院", "yīyuàn", "hospital")],
@@ -566,32 +444,21 @@ describe("a save that was claimed but never attempted", () => {
     expect(await cardsIn(1)).toEqual([]);
   });
 
-  it("contradicts a local reply that claims a save it never made", async () => {
-    spy = scriptModel([turn("I've saved 医院 to your deck.")]);
 
-    const out = await respond(env, {
-      user,
-      message: "save 医院",
-      seed: [card("医院", "yīyuàn", "hospital")],
-    });
-
-    expect(out.saves).toEqual([]);
-    expect(out.saveFailed).toBe(true);
-  });
 
   it("stays quiet when the model correctly offers instead of claiming", async () => {
-    const out = await respond(remote(), { user, message: "offer", seed: [] });
+    const out = await respond(agent(), { user, message: "offer", seed: [] });
     expect(out.saveFailed).toBe(false);
   });
 
   it("stays quiet on an ordinary turn", async () => {
-    const out = await respond(remote(), { user, message: "ok", seed: [] });
+    const out = await respond(agent(), { user, message: "ok", seed: [] });
     expect(out.saveFailed).toBe(false);
   });
 
   it("never fires when a save actually landed", async () => {
     // The guard is ordered so the flag can only appear when nothing was saved.
-    const out = await respond(remote(), {
+    const out = await respond(agent(), {
       user,
       message: "please save putref",
       seed: [card("医院", "yīyuàn", "hospital")],

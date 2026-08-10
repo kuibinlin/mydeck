@@ -1,9 +1,10 @@
 """A chat model whose answers are decided in advance.
 
-The Worker's tutor tests do the same thing by stubbing `callModel`
-(backend/test/tutor.test.js), and for the same reason: with the model's
-judgement out of the picture, what is left under test is the wiring — did the
-allowlist hold, was the attempt counted, did the right intended action come out.
+The Worker's tutor tests did the same thing by stubbing `callModel`, until
+§11 step 9 deleted the loop they covered. The reason holds here: with the
+model's judgement out of the picture, what is left under test is the wiring —
+did the allowlist hold, was the attempt counted, did the right intended action
+come out.
 
 It is a real BaseChatModel rather than a mock, so it goes through the same
 bind_tools / invoke path the production model does. A mock that skipped that

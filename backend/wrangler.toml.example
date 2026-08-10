@@ -91,9 +91,10 @@ MAX_QUESTIONS_PER_DECK = "50"   # max questions per challenge deck
 ###   AI_MODEL        flashcard and quiz generation. Wants clean JSON, fast. A
 ###                   reasoning model is the wrong choice here — it spends most of
 ###                   its output thinking before the JSON appears.
-###   AI_TUTOR_MODEL  the 中文 agent loop. Must be able to hold a tool call.
-###                   Optional: falls back to a per-provider default in
-###                   services/tutor.js, and to AI_MODEL after that.
+###
+###   There is no AI_TUTOR_MODEL. The tutor runs in services/agent-service and
+###   picks its model from that container's own AI_TUTOR_MODEL — this Worker has
+###   not chosen the tutor's model since §11 step 9 deleted its loop.
 ###
 ### Check both before trusting a new model. A model that cannot do tools does not
 ### always say so — one accepted the tool list and then answered from memory,
@@ -104,7 +105,6 @@ MAX_QUESTIONS_PER_DECK = "50"   # max questions per challenge deck
 ### ~45 neurons and a turn spends 1-4, so plan on 50-200 turns/day before 4006.
 AI_DEFAULT_PROVIDER = "cloudflare"
 AI_MODEL = "@cf/aisingapore/gemma-sea-lion-v4-27b-it"
-AI_TUTOR_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 
 ### SEA-LION (AI Singapore) — OpenAI-compatible, so the provider stays "openai".
 ### AI_BASE_URL is the host only; the code appends /v1/chat/completions.
@@ -112,9 +112,9 @@ AI_TUTOR_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 # AI_DEFAULT_PROVIDER = "openai"
 # AI_BASE_URL = "https://api.sea-lion.ai"
 # AI_MODEL = "aisingapore/Gemma-SEA-LION-v4-27B-IT"
-# AI_TUTOR_MODEL = "aisingapore/Qwen-SEA-LION-v4-32B-IT"
-### Avoid reasoning models in the agent loop (SEA-LION's v4.5, anything "-R").
-### Four steps of visible thinking measured ~200s per turn.
+### The tutor's model is set on the agent service, not here. Avoid reasoning
+### models for it (SEA-LION's v4.5, anything "-R") — four steps of visible
+### thinking measured ~200s per turn, against a 20s deadline.
 
 ### Groq — also OpenAI-compatible. Needs AI_API_KEY.
 # AI_DEFAULT_PROVIDER = "groq"
@@ -130,11 +130,17 @@ AI_TUTOR_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 
 
 ### The Python agent service — services/agent-service, on Cloud Run.
-### See docs/architecture.md §7 for the boundary and §11 for the rollout.
+### See docs/architecture.md §7 for the boundary and §11 for how it got here.
 ###
-### Everything here is OFF by default, and that is the shipping state: the
-### JavaScript tutor stays authoritative until §11 step 8. Setting the URL alone
-### changes nothing — it only makes the service reachable.
+### This is the ONLY tutor. §11 step 9 deleted the Worker's own agent loop, so
+### there are no flags: AGENT_ENABLED, AGENT_SHADOW and AGENT_ALLOWED_USERS all
+### existed to choose between two implementations and went with the second one.
+###
+### UNSET IS A SUPPORTED STATE. No URL means no tutor, and routes/zh.js answers
+### with the word cards alone — resolved deterministically from the bundled
+### dictionary, no model and no network. That is what makes `wrangler dev`
+### useful without a container running, and it is the same floor every failure
+### of this hop lands on.
 # AGENT_SERVICE_URL = "http://localhost:8080"   ### the Cloud Run URL in production
 # AGENT_SERVICE_TIMEOUT_MS = "25000"
 ### Bounded well inside the client-facing request on purpose. The tutor is
@@ -145,40 +151,6 @@ AI_TUTOR_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 ### by default). The agent stops itself just before this fires; without that it
 ### keeps working after the Worker has stopped listening, spending model budget
 ### on a request nobody will read and holding a Cloud Run instance.
-
-### Who gets the Python path. Empty means nobody, which is the point.
-# AGENT_ENABLED = "false"
-### Who gets the Python path. Comma-separated emails, same shape as ADMIN_EMAILS.
-###
-### Empty means NOBODY, deliberately — the failure mode of "empty means
-### everybody" is the whole user base moved onto an unproven path by a config
-### line that looks inert.
-###
-### EVERYONE is "*", a separate value rather than a reinterpretation of empty,
-### so a deleted line or an unset variable in a fresh environment cannot move
-### every learner at once. Someone has to type it. That is §11 step 8.
-###
-### The allowlist says WHO may be moved, never WHETHER anyone is — AGENT_ENABLED
-### or AGENT_SHADOW still decides that.
-# AGENT_ALLOWED_USERS = ""
-
-### Shadow mode runs BOTH implementations and discards the Python result, so a
-### shadowed turn costs two turns for one answer.
-###
-### Where that lands follows the providers: the Workers AI neuron allowance is
-### account-wide if AI_DEFAULT_PROVIDER is "cloudflare", otherwise it is whatever
-### AI_API_KEY bills — and the agent service has its own AI_PROVIDER, so the two
-### halves need not be the same account.
-###
-### It does NOT spend the learner's quota: shadow writes no ai_usage_log row, so
-### AI_DAILY_LIMIT_FREE is untouched.
-###
-### Your own account only, never a global flag.
-###
-### AGENT_ENABLED takes PRECEDENCE over this. With both true the mode is
-### "remote" and shadow never runs — comparing the remote path against the thing
-### it already replaced is the one combination with no value (services/tutor.js).
-# AGENT_SHADOW = "false"
 
 ### AGENT_SERVICE_SECRET is a secret, not a var — see line 61:
 ###   npx wrangler secret put AGENT_SERVICE_SECRET

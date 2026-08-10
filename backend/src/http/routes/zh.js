@@ -23,21 +23,20 @@ import { summariseResult } from "../../services/activities.js";
 // through, short enough that no single request is expensive.
 const MAX_MESSAGE_CHARS = 4000;
 
-// Background work, as a plain function.
+// No `ctx` parameter, deliberately.
 //
-// `ctx` is a runtime object and stops here. services/ takes (env, args) and
-// nothing else — that is what lets a route, an agent tool and a test all call
-// tutor.respond without one of them faking an ExecutionContext. Same reasoning
-// as ai/agentLoop.js taking `execute` as a bound function rather than the
-// registry.
+// It used to be threaded down as a bound `waitUntil` so shadow mode could run
+// the Python path in the background while JavaScript answered. §11 step 9 left
+// one implementation, so there is no second run to background — a turn is
+// finished when the response is written.
 //
-// Absent (a test, a tool) the work is simply not scheduled, which is the right
-// default: shadow mode is an observation, and an observation that cannot be
-// backgrounded should not run on the learner's request instead.
-const background = (ctx) =>
-  typeof ctx?.waitUntil === "function" ? ctx.waitUntil.bind(ctx) : null;
+// The reason it was a bound function rather than the ExecutionContext still
+// stands and is worth keeping in mind for the next thing that wants background
+// work: services/ takes (env, args) and nothing else, so a route, a test and a
+// tool can all call the same function without one of them faking a runtime
+// object.
 
-export async function turn(request, env, _params, ctx) {
+export async function turn(request, env) {
   const user = await requireUser(request, env);
 
   const { message: rawMessage, activityResult, level, context } = await readBody(request, {});
@@ -61,7 +60,7 @@ export async function turn(request, env, _params, ctx) {
   // Passed through unbounded on purpose — tutor.respond bounds it, so every
   // caller gets the same limits rather than the ones this route remembered.
   if (activityResult)
-    return respondToResult(request, env, user, activityResult, hskLevel, context, ctx);
+    return respondToResult(request, env, user, activityResult, hskLevel, context);
 
   const classification = classify(message);
 
@@ -94,7 +93,6 @@ export async function turn(request, env, _params, ctx) {
       seed: cards,
       level: hskLevel,
       context,
-      waitUntil: background(ctx),
     });
   } catch (err) {
     console.warn(`[zh] tutor unavailable: ${err?.message ?? err}`);
@@ -124,7 +122,7 @@ export async function turn(request, env, _params, ctx) {
  * whatever the request claims. See services/activities.js#summariseResult for
  * why that clamp is the load-bearing part.
  */
-async function respondToResult(request, env, user, payload, level, context, ctx) {
+async function respondToResult(request, env, user, payload, level, context) {
   const { activity, ...data } = payload ?? {};
   const summary = summariseResult(activity, data);
 
@@ -136,7 +134,6 @@ async function respondToResult(request, env, user, payload, level, context, ctx)
       seed: [],
       level,
       context,
-      waitUntil: background(ctx),
     });
   } catch (err) {
     console.warn(`[zh] tutor unavailable after activity: ${err?.message ?? err}`);

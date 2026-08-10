@@ -1,10 +1,14 @@
 // Upstream failures, classified.
 //
-// The only thing the two loops above these providers can act on is `.status`:
+// The only thing above these providers that can act on a failure is `.status`:
 // generateStructured rethrows a status-carrying error and retries everything
-// else, and agentLoop now does the same. So whether a failure is retried comes
-// down entirely to the string matching below — which is why it is tested rather
-// than trusted.
+// else. So whether a failure is retried comes down entirely to the string
+// matching below — which is why it is tested rather than trusted.
+//
+// There was a second consumer, ai/agentLoop.js, until §11 step 9 deleted it.
+// generateStructured is the only one now, and the classification still has to
+// be right: it is what decides whether a spent daily allowance is retried three
+// times before the learner is told.
 //
 // The case that motivated this: Workers AI answers a spent daily allowance with
 //

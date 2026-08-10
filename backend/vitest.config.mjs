@@ -66,6 +66,21 @@ async function agentScenario(scenario, id, request) {
         usage: { model_calls: 3, input_tokens: 900, output_tokens: 120 },
       });
 
+    // Several model calls and nothing else, so a billing assertion is about
+    // billing. The default response reports exactly one call, which makes
+    // "one row per call" and "one row per request" produce the same number —
+    // a test that cannot tell them apart.
+    case "billing":
+      return send({ ...agentOk(id), usage: { model_calls: 4, input_tokens: 9, output_tokens: 9 } });
+
+    // The one usage number tutor.js loops on, far past anything a real run
+    // produces. Unbounded, this is an unbounded run of awaited D1 writes.
+    case "overbilled":
+      return send({
+        ...agentOk(id),
+        usage: { model_calls: 9999, input_tokens: 9, output_tokens: 9 },
+      });
+
     // --- composition scenarios: one intended action, driven through tutor.js ---
 
     case "putref":
@@ -116,6 +131,19 @@ async function agentScenario(scenario, id, request) {
         ...agentOk(id),
         intended_actions: [{ type: "save_words_to_deck", deck_id: 9999 }],
         save_attempts: 1,
+      });
+
+    // A valid save followed by one naming a deck we never offered. The refusal
+    // has to land before the first one writes, or the turn fails with a deck
+    // already in the learner's account that nothing on screen mentions.
+    case "goodthenbad":
+      return send({
+        ...agentOk(id),
+        intended_actions: [
+          { type: "save_words_to_deck", word_refs: [0], deck_name: "First" },
+          { type: "save_words_to_deck", deck_id: 9999 },
+        ],
+        save_attempts: 2,
       });
 
     case "stroke":
