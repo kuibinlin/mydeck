@@ -173,6 +173,13 @@ jobs:
       # the new one, so it cannot tell a successful deploy from a silent
       # rollback. Only the revision can. This is the assertion
       # .github/workflows/README.md argues for, and app/version.py exists for.
+      #
+      # Polled for the same reason deploy-api.yml is, though the race here is
+      # narrower: `gcloud run deploy` waits for the revision to be ready, so
+      # what is left is traffic migration and a cold start on a scale-to-zero
+      # service — enough for one immediate request to hit the old revision or
+      # simply time out. A revision that never becomes the expected one still
+      # fails, which is the assertion worth keeping.
       - name: Smoke test
         run: |
           set -euo pipefail
@@ -180,11 +187,26 @@ jobs:
           URL=$(gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT_ID" --format='value(status.url)')
           REV=$(gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT_ID" --format='value(status.latestReadyRevisionName)')
 
-          test "$(curl -fsS "$URL/health" | jq -r .status)" = "ok"
+          DEADLINE=$((SECONDS + 120))
+          attempt=0
 
-          SERVING=$(curl -fsS "$URL/version" | jq -r .revision)
-          echo "expected revision: $REV"
-          echo "serving revision:  $SERVING"
-          test "$SERVING" = "$REV"
+          while :; do
+            attempt=$((attempt + 1))
+            STATUS=$(curl -fsS --max-time 15 "$URL/health"  | jq -r .status   2>/dev/null || echo unreachable)
+            SERVING=$(curl -fsS --max-time 15 "$URL/version" | jq -r .revision 2>/dev/null || echo unreachable)
 
-          echo "✅ $SERVICE is serving ${REPOSITORY}:${{ steps.tag.outputs.sha }} as $REV"
+            if [ "$STATUS" = "ok" ] && [ "$SERVING" = "$REV" ]; then
+              echo "✅ $SERVICE is serving ${REPOSITORY}:${{ steps.tag.outputs.sha }} as $REV (attempt $attempt)"
+              exit 0
+            fi
+
+            if [ "$SECONDS" -ge "$DEADLINE" ]; then
+              echo "::error::$SERVICE is serving revision '$SERVING' with health '$STATUS' after $attempt attempts over 120s — expected '$REV'."
+              echo "The revision reported ready, so one that never takes traffic means it failed to"
+              echo "start under load or traffic is pinned elsewhere. Check the Cloud Run revision logs."
+              exit 1
+            fi
+
+            echo "attempt $attempt: health '$STATUS', revision '$SERVING' — waiting for '$REV'"
+            sleep 5
+          done

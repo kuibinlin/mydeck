@@ -112,16 +112,51 @@ jobs:
       #
       # This is the assertion .github/workflows/README.md argues for, and the
       # reason meta.js keeps APP_VERSION out of committed config.
+      #
+      # POLLED, NOT CHECKED ONCE. `wrangler deploy` returns when Cloudflare
+      # accepts the upload, not when every edge location serves it. A single
+      # immediate check races that propagation, and it lost twice — the merges
+      # of #14 and #15 both went red here reporting the PREVIOUS version, on
+      # deploys that were fine and were serving the new SHA a minute later.
+      #
+      # That is worse than having no check at all. A deploy step that cries
+      # wolf teaches you to read a red X as normal, which is precisely the
+      # signal this assertion exists to protect — the same argument that
+      # removed the tutor's unobservable fallback in §11 step 9.
+      #
+      # A version that never becomes the expected one still fails. That is a
+      # real silent rollback, and it is what the window is long enough to tell
+      # apart from propagation.
       - name: Smoke test
+        env:
+          EXPECTED: ${{ steps.deploy.outputs.sha }}
         run: |
           set -euo pipefail
           API=https://mydeckapi.linsnotes.com
+          DEADLINE=$((SECONDS + 120))
+          attempt=0
 
-          test "$(curl -fsS "$API/health" | jq -r .status)" = "ok"
+          # `|| echo unreachable` keeps a transient curl failure from killing
+          # the step under `set -e`: mid-propagation is exactly when a request
+          # can fail outright, and that is a reason to retry, not to give up.
+          while :; do
+            attempt=$((attempt + 1))
+            STATUS=$(curl -fsS --max-time 10 "$API/health"  | jq -r .status  2>/dev/null || echo unreachable)
+            SERVING=$(curl -fsS --max-time 10 "$API/version" | jq -r .version 2>/dev/null || echo unreachable)
 
-          SERVING=$(curl -fsS "$API/version" | jq -r .version)
-          echo "expected: ${{ steps.deploy.outputs.sha }}"
-          echo "serving:  $SERVING"
-          test "$SERVING" = "${{ steps.deploy.outputs.sha }}"
+            if [ "$STATUS" = "ok" ] && [ "$SERVING" = "$EXPECTED" ]; then
+              echo "✅ $API is serving $EXPECTED (attempt $attempt)"
+              exit 0
+            fi
 
-          echo "✅ mydeckapi.linsnotes.com is serving ${{ steps.deploy.outputs.sha }}"
+            if [ "$SECONDS" -ge "$DEADLINE" ]; then
+              echo "::error::$API is serving '$SERVING' with health '$STATUS' after $attempt attempts over 120s — expected '$EXPECTED'."
+              echo "The upload was accepted, so a version that never changes means it was rolled back,"
+              echo "or a route still points at an older script. Check the Cloudflare dashboard;"
+              echo "re-running this job will not change what is deployed."
+              exit 1
+            fi
+
+            echo "attempt $attempt: health '$STATUS', serving '$SERVING' — waiting for '$EXPECTED'"
+            sleep 5
+          done
