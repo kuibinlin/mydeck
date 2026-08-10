@@ -530,6 +530,7 @@ dependencies = [
     { name = "langchain" },
     { name = "langchain-openai" },
     { name = "langfuse" },
+    { name = "langgraph" },
     { name = "pydantic" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -549,6 +550,7 @@ requires-dist = [
     { name = "langchain", specifier = ">=1.0" },
     { name = "langchain-openai", specifier = ">=0.3" },
     { name = "langfuse", specifier = ">=3.0" },
+    { name = "langgraph", specifier = ">=1.0" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
