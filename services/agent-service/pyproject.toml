@@ -24,6 +24,16 @@ dependencies = [
     # and with it tools/repair.js (argument coercion) and ai/toolMessages.js
     # (per-provider tool-message shapes) — both are library concerns here.
     "langchain>=1.0",
+    # The engine under create_agent, and declared because app/agent/run.py
+    # imports from it DIRECTLY — `GraphRecursionError`, which is how a turn that
+    # ran out of loop depth is told apart from one that failed. That is the only
+    # direct use; the graph itself is never constructed here.
+    #
+    # It arrives transitively through langchain either way, which is exactly why
+    # it is written down. An undeclared import keeps working right up until the
+    # package that happened to supply it reorganises, and then it fails at
+    # import time on a container nobody changed.
+    "langgraph>=1.0",
     # AI_TUTOR_MODEL reaches SEA-LION through an OpenAI-compatible endpoint, the
     # same route backend/src/ai/providers/openaiCompat.js takes.
     "langchain-openai>=0.3",
