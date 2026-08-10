@@ -23,8 +23,10 @@ rather than instructions:
 - [../.github/workflows/README.md](../.github/workflows/README.md) — the commands
   a CI job would run, and what will break it
 
-`CLAUDE.md` at the repo root is separate from all of these: it documents the
-*reasoning* behind the architecture — why the tool allowlist is enforced where
-tools run rather than where they are advertised, why the client posts its own
-conversation history back, why challenge decks version and flashcard decks do
-not. Read it before changing the Worker's agent path.
+You may also see a `CLAUDE.md` at the repo root. It is **gitignored on purpose**
+— working notes for Claude Code, not part of this set, and not in a clone.
+Nothing here points at it, and nothing in it is the only copy of anything: the
+reasoning behind the architecture lives in
+[architecture.md](architecture.md) (the decisions and the contract) and
+[structure.md](structure.md) (the layering rules). If you find yourself writing
+a rule only into `CLAUDE.md`, it belongs in one of those instead.

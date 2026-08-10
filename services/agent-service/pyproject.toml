@@ -87,8 +87,9 @@ typeCheckingMode = "strict"
 # Turning them back on is a real project, not a config change: app/hsk/project.py
 # alone accounts for 30, and silencing them properly means TypedDicts for the
 # HSK server's JSON rather than annotations. Worth doing if that projection ever
-# gets subtle — it is a context-budget correctness requirement (CLAUDE.md) — but
-# it is not what a type checker swap should smuggle in.
+# gets subtle — it is a context-budget correctness requirement, not a tidiness
+# one (docs/architecture.md §5) — but it is not what a type checker swap should
+# smuggle in.
 reportUnknownVariableType = false
 reportUnknownMemberType = false
 reportUnknownArgumentType = false

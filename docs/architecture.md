@@ -232,8 +232,9 @@ Python never resolves.** See §7.2 for how resolved words cross the wire.
 
 ### The invariant most at risk
 
-`CLAUDE.md` documents a **measured** failure: the model corrupts Chinese it
-retypes (翻译 → 翰译, 医院 → 疒馆). Three defenses exist because of it — resolved
+A **measured** failure, and the one this whole section exists for: the model
+corrupts Chinese it retypes (翻译 → 翰译, 医院 → 疒馆). Three defenses exist
+because of it — resolved
 words pre-seeded as already-executed tool results, `hsk_lookup` intercepted for
 seeded words, and `deckSave` re-resolving every word against the index.
 
@@ -344,9 +345,10 @@ Instead, the Worker supplies an indexed list and Python refers to positions in i
 ```
 
 Bounded integers, no ID scheme, no migration — and the Worker maps them back to
-records it produced itself. This also makes structural something that is currently
-only conventional: `CLAUDE.md` already notes that naming words in
-`save_words_to_deck` *selects* from `knownWords()` rather than supplying them.
+records it produced itself. This also makes structural something that was
+previously only conventional: naming words in `save_words_to_deck` *selects*
+from `knownWords()` rather than supplying them, and omitting the refs still
+means "what we have been discussing".
 
 `model_calls` is what the Worker logs to `ai_usage_log`, one row per call.
 

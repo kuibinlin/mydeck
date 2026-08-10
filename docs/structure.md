@@ -41,7 +41,8 @@ eslint.config.js       flat config; `eslint .` lints frontend/ and backend/
 .dockerignore          ahead of containerisation — see the file's own comments
 README.md
 LICENSE
-CLAUDE.md              architecture notes for Claude Code (gitignored)
+CLAUDE.md              local notes for Claude Code — gitignored, absent from a
+                       clone, and nothing here depends on it
 ```
 
 **Why `eslint.config.js` is at the root and `vite.config.js` is not.** ESLint runs
@@ -127,8 +128,8 @@ that called them is `services/agent-service` now, and it *asks* rather than acts
 What is left of `ai/` serves flashcard and quiz generation, which never moved:
 one model call, no tools, JSON extracted and validated.
 
-The layering rules are the load-bearing part, and they are documented in full in
-`CLAUDE.md`. In short:
+The layering rules are the load-bearing part, and this is where they are written
+down. Four of them:
 
 - `services/` never imports from `http/` — no Request, no Response, no CORS. That
   is what lets an HTTP route and a test call the same function, and what made
@@ -140,6 +141,12 @@ The layering rules are the load-bearing part, and they are documented in full in
   route would call to materialise what comes back. That is why an agent and a
   route enforce identical limits and ownership — there is one implementation of
   each, not a parallel set for tools.
+- **Route handlers build service arguments with `readBody(request, { ...trusted })`**,
+  never `{ user, ...(await request.json()) }`. The body spreads first and trusted
+  values — the authenticated `user`, path params — spread last. Reversed, a
+  request body carrying `{"user": {...}}` replaces the authenticated user: a
+  privilege escalation that looks like a formatting choice. `test/bodyOverride.test.js`
+  pins it.
 
 ---
 
